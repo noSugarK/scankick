@@ -24,10 +24,6 @@
   <a href="README.md">简体中文</a> · English
 </p>
 
-<p align="center">
-  <img src="docs/screenshots/home-desktop.webp" alt="ScanKick home page" width="860">
-</p>
-
 ## Trailer
 
 <p align="center">
