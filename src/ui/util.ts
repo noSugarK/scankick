@@ -26,7 +26,19 @@ export const store = {
       /* 隐私模式等情况下忽略 */
     }
   },
+  /** 删除以 prefix 开头的所有键 */
+  clear(prefix: string, local = true) {
+    try {
+      const s = local ? localStorage : sessionStorage;
+      for (const k of Object.keys(s)) if (k.startsWith(prefix)) s.removeItem(k);
+    } catch {
+      /* 忽略 */
+    }
+  },
 };
+
+/** 房间战绩存在本标签页（sessionStorage）：刷新还在，关掉标签页或回到首页即删除 */
+export const HISTORY_KEY = 'sfb.hist.';
 
 let wakeLock: { release(): Promise<void> } | null = null;
 export async function keepAwake() {

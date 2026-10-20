@@ -4,7 +4,7 @@ import { LOBBY_HEARTBEAT_MS, LobbyPublisher } from '../net/lobby';
 import { decodeInput, encodeSnapshot } from '../net/protocol';
 import { t } from '../i18n';
 import { sfxGoal, sfxKick, sfxWhistle } from '../ui/sound';
-import type { RoomOpts } from '../ui/util';
+import { HISTORY_KEY, store, type RoomOpts } from '../ui/util';
 import { botInput, forgetBot } from './ai';
 import { TEAM_NAME, goalText, type ViewState } from './render';
 import { Sim } from './sim';
@@ -140,6 +140,17 @@ export class HostGame {
       },
     });
     this.lobby = new LobbyPublisher(this.net.signal, opts.listed);
+    this.loadHistory();
+  }
+
+  /** 刷新页面后恢复本房间的战绩 */
+  private loadHistory() {
+    try {
+      const list = JSON.parse(store.get(HISTORY_KEY + this.room, false) || '[]');
+      if (Array.isArray(list)) this.history.push(...list.slice(0, HISTORY_MAX));
+    } catch {
+      /* 数据损坏就当没有 */
+    }
   }
 
   async start() {
@@ -282,6 +293,7 @@ export class HostGame {
     const t = this.pickTeam(team) ?? 0;
     const s = this.addSlot({ name: name.slice(0, 12), team: t, bot: false, online: true, link: 'local' }, null);
     this.localPid = s.info.id;
+    if (this.history.length) this.onLocal({ t: 'history', list: this.history });
     this.rosterChanged();
     return s.info.id;
   }
@@ -648,6 +660,7 @@ export class HostGame {
           this.endInfo = { score: [sim.score[0], sim.score[1]], ...p, at: Date.now(), ...this.finalStats() };
           this.history.unshift(this.endInfo);
           this.history.length = Math.min(this.history.length, HISTORY_MAX);
+          store.set(HISTORY_KEY + this.room, JSON.stringify(this.history), false);
           this.broadcast({ t: 'ev', k: 'end', ...this.endInfo });
           this.broadcast({ t: 'history', list: this.history });
           this.rosterChanged();

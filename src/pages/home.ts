@@ -2,12 +2,14 @@ import { t } from '../i18n';
 import { LOBBY_STALE_MS, watchLobby, type LobbyInfo } from '../net/lobby';
 import { openScanner } from '../ui/scan';
 import { bindSiteTools, icon, siteFooter, siteTools } from '../ui/site';
-import { brand, esc, isPin, normalizeCode, store } from '../ui/util';
+import { HISTORY_KEY, brand, esc, isPin, normalizeCode, store } from '../ui/util';
 
 const CODE_LEN = 5;
 type Tab = 'host' | 'join' | 'lobby';
 
 export function mountHome(app: HTMLElement) {
+  // 回到首页即离开了房间（主机随页面关闭），房间战绩一并删除
+  store.clear(HISTORY_KEY, false);
   const saved = store.get('sfb.tab', false) as Tab | null;
   let tab: Tab = saved === 'join' || saved === 'lobby' ? saved : 'host';
 
