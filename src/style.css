@@ -1272,10 +1272,14 @@ h1 {
   gap: 8px;
 }
 /* 比赛中的水印：小、半透明、不接收点击 */
+/* 比赛中的 logo：和状态标签同款的深色胶囊底，在草地上也看得清；不接收点击 */
 .game-logo {
+  box-sizing: content-box;
   height: 18px;
   width: auto;
-  opacity: 0.55;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.55);
   pointer-events: none;
   user-select: none;
 }
@@ -1283,7 +1287,8 @@ h1 {
   position: absolute;
   left: 16px;
   bottom: 16px;
-  height: 26px;
+  height: 22px;
+  padding: 6px 12px;
   z-index: 1;
 }
 

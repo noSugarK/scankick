@@ -309,15 +309,18 @@ export class Renderer {
     ctx.scale(scale, scale);
     const W = 300;
     const H = 44;
-    ctx.fillStyle = 'rgba(13,31,22,0.8)';
+    // 比分牌半透明，少挡球场；文字保持不透明
+    ctx.fillStyle = 'rgba(13,31,22,0.45)';
     roundRect(ctx, -W / 2, 0, W, H, 12);
     ctx.fill();
+    ctx.globalAlpha = 0.7;
     ctx.fillStyle = TEAM_COLOR[0];
     roundRect(ctx, -W / 2 + 6, 6, 72, H - 12, 8);
     ctx.fill();
     ctx.fillStyle = TEAM_COLOR[1];
     roundRect(ctx, W / 2 - 78, 6, 72, H - 12, 8);
     ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
