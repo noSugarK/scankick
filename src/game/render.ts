@@ -293,7 +293,7 @@ export class Renderer {
       const bw = 34;
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       ctx.fillRect(p.x - bw / 2, p.y + r + 6, bw, 5);
-      ctx.fillStyle = p.stamina < 0.3 ? '#ff453a' : '#30d158';
+      ctx.fillStyle = p.stamina < 0.3 ? '#e5484d' : '#2fbf71';
       ctx.fillRect(p.x - bw / 2, p.y + r + 6, bw * p.stamina, 5);
     }
     ctx.globalAlpha = 1;
@@ -309,7 +309,7 @@ export class Renderer {
     ctx.scale(scale, scale);
     const W = 300;
     const H = 44;
-    ctx.fillStyle = 'rgba(10,14,20,0.78)';
+    ctx.fillStyle = 'rgba(13,31,22,0.8)';
     roundRect(ctx, -W / 2, 0, W, H, 12);
     ctx.fill();
     ctx.fillStyle = TEAM_COLOR[0];

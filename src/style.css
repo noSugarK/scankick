@@ -1,12 +1,14 @@
+/* 全站配色：比赛页与首页深色主题共用同一套墨绿中性色；红蓝即队伍色，ABXY 也用这几种 */
 :root {
-  --bg: #0f1720;
-  --fg: #e8edf3;
-  --muted: #8b98a8;
-  --card: rgba(15, 21, 29, 0.92);
-  --line: rgba(255, 255, 255, 0.1);
+  --bg: #0d1f16;
+  --fg: #e8f2ec;
+  --muted: #8fb5a0;
+  --card: rgba(16, 38, 27, 0.92);
+  --line: rgba(232, 242, 236, 0.12);
   --green: #2fbf71;
   --red: #e5484d;
   --blue: #3e7bfa;
+  --yellow: #f2b632;
   color-scheme: dark;
 }
 
@@ -305,10 +307,10 @@ h1 {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #8b98a8;
+  background: var(--muted);
 }
 .net-badge.ok i {
-  background: #30d158;
+  background: var(--green);
 }
 .result {
   position: absolute;
@@ -372,7 +374,7 @@ h1 {
   background: rgba(0, 0, 0, 0.45);
 }
 .status.p2p i {
-  background: #30d158;
+  background: var(--green);
 }
 .status.relay i {
   background: #ffd60a;
@@ -470,22 +472,22 @@ h1 {
   background: color-mix(in srgb, var(--c) 75%, transparent);
 }
 .pad-btn.y {
-  --c: #ffd60a;
+  --c: var(--yellow);
   left: 67px;
   top: 0;
 }
 .pad-btn.x {
-  --c: #0a84ff;
+  --c: var(--blue);
   left: 0;
   top: 67px;
 }
 .pad-btn.b {
-  --c: #ff453a;
+  --c: var(--red);
   right: 0;
   top: 67px;
 }
 .pad-btn.a {
-  --c: #34c759;
+  --c: var(--green);
   left: 67px;
   bottom: 0;
 }
@@ -627,7 +629,7 @@ h1 {
     align-items: center;
     justify-content: center;
     font-size: 20px;
-    background: rgba(10, 14, 20, 0.94);
+    background: rgba(13, 31, 22, 0.94);
   }
 }
 
@@ -1344,16 +1346,17 @@ h1 {
   flex: none;
 }
 .pad-key.a {
-  background: #2fa866;
+  background: var(--green);
 }
 .pad-key.b {
-  background: #e5484d;
+  background: var(--red);
 }
 .pad-key.x {
-  background: #3e7bfa;
+  background: var(--blue);
 }
 .pad-key.y {
-  background: #d9a21b;
+  background: var(--yellow);
+  color: #3a2a00;
 }
 .pad-key.stick-key {
   background: var(--s-soft);
