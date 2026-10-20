@@ -74,7 +74,7 @@ const zhCN = {
   'guide.s3c': '房主可以随时结束比赛，按当前比分判定胜负。',
   'guide.s4': '小提示',
   'guide.s4a': '手机横屏，并关闭系统的自动锁屏。',
-  'guide.s4b': '右上角显示「直连」延迟最低；显示「中继」说明网络穿透失败，会自动尝试恢复直连。',
+  'guide.s4b': '左上角显示「直连」延迟最低；显示「中继」说明网络穿透失败，会自动尝试恢复直连，也可以点一下它马上重试。',
 
   'team.red': '红队',
   'team.blue': '蓝队',
@@ -98,6 +98,8 @@ const zhCN = {
   'status.connectingSignal': '连接信令服务器…',
   'status.host': '主机 · 房间 {room}',
   'status.offline': '掉线',
+  'status.tapRetry': '点击重试直连',
+  'play.retryP2P': '正在尝试直连…',
 
   'reject.pinWrong': '密码错误',
   'reject.pinNeed': '该房间需要密码',
@@ -259,7 +261,7 @@ const zhTW: Dict = {
   'guide.s3c': '房主可以隨時結束比賽，依目前比分判定勝負。',
   'guide.s4': '小提示',
   'guide.s4a': '手機橫放，並關閉系統的自動鎖定。',
-  'guide.s4b': '右上角顯示「直連」延遲最低；顯示「中繼」代表網路穿透失敗，會自動嘗試恢復直連。',
+  'guide.s4b': '左上角顯示「直連」延遲最低；顯示「中繼」代表網路穿透失敗，會自動嘗試恢復直連，也可以點一下它馬上重試。',
 
   'team.red': '紅隊',
   'team.blue': '藍隊',
@@ -283,6 +285,8 @@ const zhTW: Dict = {
   'status.connectingSignal': '連線信令伺服器…',
   'status.host': '主機 · 房間 {room}',
   'status.offline': '離線',
+  'status.tapRetry': '點擊重試直連',
+  'play.retryP2P': '正在嘗試直連…',
 
   'reject.pinWrong': '密碼錯誤',
   'reject.pinNeed': '此房間需要密碼',
@@ -442,7 +446,7 @@ const en: Dict = {
   'guide.s3c': 'The host can end the match at any time; the current score decides the result.',
   'guide.s4': 'Tips',
   'guide.s4a': 'Hold your phone in landscape and turn off auto-lock.',
-  'guide.s4b': '“Direct” in the top corner means the lowest latency. “Relay” means a direct link failed; it keeps retrying automatically.',
+  'guide.s4b': '“Direct” in the top-left corner means the lowest latency. “Relay” means a direct link failed; it keeps retrying automatically, and you can tap it to retry right away.',
 
   'team.red': 'Red',
   'team.blue': 'Blue',
@@ -466,6 +470,8 @@ const en: Dict = {
   'status.connectingSignal': 'Connecting to signaling server…',
   'status.host': 'Host · room {room}',
   'status.offline': 'offline',
+  'status.tapRetry': 'Tap to retry a direct link',
+  'play.retryP2P': 'Trying a direct link…',
 
   'reject.pinWrong': 'Wrong password',
   'reject.pinNeed': 'This room needs a password',

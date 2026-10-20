@@ -137,10 +137,20 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   };
 
   function setStatus(s: ClientState) {
-    statusEl.className = `status ${s}`;
+    // 中继或失联时状态标签可点：手动重试直连
+    const retry = s === 'relay' || s === 'lost';
+    statusEl.className = `status ${s}${retry ? ' retry' : ''}`;
     const ping = (s === 'p2p' || s === 'relay') && rtt ? ` ${Math.round(rtt)}ms` : '';
-    statusEl.querySelector('span')!.textContent = t(STATE_TEXT[s]) + ping;
+    statusEl.querySelector('span')!.textContent = t(STATE_TEXT[s]) + ping + (retry ? ' ↻' : '');
+    statusEl.title = retry ? t('status.tapRetry') : '';
+    statusEl.setAttribute('role', retry ? 'button' : 'status');
+    statusEl.tabIndex = retry ? 0 : -1;
   }
+  const retryDirect = () => {
+    if (net?.retryDirect()) toast(t('play.retryP2P'), 2000);
+  };
+  statusEl.onclick = retryDirect;
+  statusEl.onkeydown = (e) => (e.key === 'Enter' || e.key === ' ') && retryDirect();
 
   const send = (msg: ClientMsg) => {
     if (game) game.command(meId, msg);

@@ -76,9 +76,21 @@ class RemotePeer {
     send();
   }
 
+  private lastRetry = 0;
+
+  /** 手机端点状态标签请求重试直连：立即重建，并重置定时重试；3 秒内重复请求忽略 */
+  retryNow() {
+    const now = performance.now();
+    if (this.mode !== 'relay' || now - this.lastRetry < 3000) return;
+    clearInterval(this.retryTimer);
+    this.retryTimer = window.setInterval(() => this.retryP2P(), 15000);
+    this.retryP2P();
+  }
+
   /** 中继期间定期重建 P2P（例如手机从后台恢复、网络切换后） */
   private retryP2P() {
     if (this.mode !== 'relay') return;
+    this.lastRetry = performance.now();
     this.pc.close();
     this.setupPc();
     this.start().catch(() => {});
@@ -184,6 +196,9 @@ export class HostNet {
         return;
       case 'ice':
         peer?.onIce(msg.c);
+        return;
+      case 'p2p':
+        peer?.retryNow();
         return;
       case 'bye':
         this.drop(cid);

@@ -31,6 +31,7 @@ export class ClientNet {
   state: ClientState = 'signal';
   /** 调试：忽略 offer，强制走 MQTT 中继 */
   forceRelay = false;
+  private lastRetry = 0;
 
   onState: (s: ClientState) => void = () => {};
   onJson: (msg: any) => void = () => {};
@@ -193,6 +194,20 @@ export class ClientNet {
     await pc.setLocalDescription(answer);
     this.lastAnswer = answer.sdp ?? '';
     this.signal.pub(`h/${this.cid}`, { t: 'answer', sdp: answer.sdp });
+  }
+
+  /**
+   * 用户手动请求直连：中继时请主机立即重新协商（中继保持可用，不打断比赛）；
+   * 失联时直接重新握手。4 秒内重复点击忽略，返回是否真的发起了重试
+   */
+  retryDirect(): boolean {
+    const now = performance.now();
+    if (now - this.lastRetry < 4000) return false;
+    if (this.state === 'relay') this.signal.pub(`h/${this.cid}`, { t: 'p2p' });
+    else if (this.state === 'lost') this.restart();
+    else return false;
+    this.lastRetry = now;
+    return true;
   }
 
   private p2pOpen() {

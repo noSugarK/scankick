@@ -302,6 +302,13 @@ h1 {
 .status.p2p i {
   background: var(--green);
 }
+.status.retry {
+  cursor: pointer;
+  border: 1px solid rgba(255, 214, 10, 0.35);
+}
+.status.retry:active {
+  transform: scale(0.97);
+}
 .status.relay i {
   background: #ffd60a;
 }
