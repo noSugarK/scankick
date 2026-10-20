@@ -54,7 +54,9 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   }
   const joinedKey = isHost ? 'sfb.hosting' : `sfb.joined.${room}`;
   const savedName = store.get('sfb.name') || `${t('player.default')}${Math.floor(Math.random() * 90 + 10)}`;
-  const autoJoin = store.get(joinedKey, false) === '1';
+  // '1' 已作为球员加入，'w' 正在观战：刷新后按原身份自动重连
+  const joined = store.get(joinedKey, false);
+  const autoJoin = joined === '1' || joined === 'w';
   const opts = isHost ? roomOpts() : null;
   // 客户端密码：二维码自带 > 本标签页上次输入的
   const urlPin = mode.kind === 'client' ? mode.pin : '';
@@ -92,6 +94,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         <button data-team="1" style="--c:${TEAM_COLOR[1]}">${TEAM_NAME[1]}</button>
       </div>
       <button class="primary go">${t(isHost ? 'play.create' : 'play.enter')}</button>
+      ${isHost ? '' : `<button class="ghost watch-go">${t('play.watch')}</button>`}
       <p class="muted small">${t('play.tip')}</p>
     </div>
     <div class="toast" hidden></div>
@@ -119,6 +122,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let net: ClientNet | null = null;
   let game: HostGame | null = null;
   let meId = -1;
+  /** 观战中：不占球员名额，没有手柄 */
+  let watching = false;
   let players: PlayerInfo[] = [];
   let roster: RosterMsg | null = null;
   let rtt = 0;
@@ -141,7 +146,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const retry = s === 'relay' || s === 'lost';
     statusEl.className = `status ${s}${retry ? ' retry' : ''}`;
     const ping = (s === 'p2p' || s === 'relay') && rtt ? ` ${Math.round(rtt)}ms` : '';
-    statusEl.querySelector('span')!.textContent = t(STATE_TEXT[s]) + ping + (retry ? ' ↻' : '');
+    const role = watching ? `${t('play.watching')} · ` : '';
+    statusEl.querySelector('span')!.textContent = role + t(STATE_TEXT[s]) + ping + (retry ? ' ↻' : '');
     statusEl.title = retry ? t('status.tapRetry') : '';
     statusEl.setAttribute('role', retry ? 'button' : 'status');
     statusEl.tabIndex = retry ? 0 : -1;
@@ -160,10 +166,22 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   const current = (): Pick<Snapshot, 'phase' | 'score'> =>
     game ? game.sim : (buf.latest?.s ?? { phase: Phase.Lobby, score: [0, 0] });
 
-  async function join() {
+  function setWatching(w: boolean) {
+    watching = w;
+    $('.play').classList.toggle('watching', w);
+    $('.cam').hidden = w;
+    if (w) renderer.follow = false;
+    if (net) {
+      net.info.watch = w;
+      setStatus(net.state);
+    }
+    if (!isHost) store.set(joinedKey, w ? 'w' : '1', false);
+  }
+
+  async function join(watch = false) {
     const name = ($<HTMLInputElement>('.name').value.trim() || savedName).slice(0, 12);
     store.set('sfb.name', name);
-    store.set(joinedKey, '1', false);
+    store.set(joinedKey, watch ? 'w' : '1', false);
     if (isHost) return startHost(name);
     let token = store.get(`sfb.token.${room}`);
     if (!token) {
@@ -178,7 +196,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const pin = (pinEl.hidden ? urlPin : pinEl.value.replace(/\D/g, '')) || undefined;
     if (!pinEl.hidden) store.set(pinKey, pin ?? '', false);
     net?.close();
-    net = new ClientNet(room, { token, name, team, pin });
+    net = new ClientNet(room, { token, name, team, pin, watch });
     net.forceRelay = forceRelay;
     buf.delay = 60;
     net.onState = (s) => {
@@ -229,6 +247,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     switch (m.t) {
       case 'welcome':
         meId = m.pid;
+        setWatching(m.pid < 0);
+        renderPanel();
         break;
       case 'roster':
         roster = m;
@@ -250,6 +270,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
           vibrate(me && me.team === m.team ? [120, 60, 120, 60, 200] : 200);
         } else if (m.k === 'end') {
           vibrate([300, 100, 300]);
+        } else if (m.k === 'full') {
+          toast(t('play.joinFull'), 2500);
         } else if (m.k === 'vote') {
           const me = players.find((p) => p.id === meId);
           if (me?.team === m.team) toast(t(m.cancel ? 'play.unvote' : 'play.vote', { name: m.name, n: m.n, need: m.need }), 2500);
@@ -274,7 +296,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const showQr = qrOpen ?? !players.some((p) => !p.bot && p.id !== meId);
 
     // 头部：房间信息、二维码开关（本机是主机时）、关闭
-    let html = `<div class="panel-head"><span>${t('play.room', { room: `<b>${esc(room)}</b>` })} · ${t('play.online', { n: players.filter((p) => !p.bot).length })}</span>`;
+    const watchers = r.watchers ? ` · ${t('play.watchers', { n: r.watchers })}` : '';
+    let html = `<div class="panel-head"><span>${t('play.room', { room: `<b>${esc(room)}</b>` })} · ${t('play.online', { n: players.filter((p) => !p.bot).length })}${watchers}</span>`;
     if (isHost) html += `<button class="ghost qr-toggle">${t('play.qr')} ${showQr ? '▴' : '▾'}</button>`;
     html += `<button class="ghost close" aria-label="close">×</button></div>`;
     if (isHost && showQr) {
@@ -297,19 +320,33 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         .join('')}</div>`;
     }
     html += '<div class="pbody">';
+    // 观战者：哪队还有真人空位就能直接加入那队
+    const hasRoom = (team: Team) => players.filter((p) => !p.bot && p.team === team).length < CONFIG.maxPerTeam;
     if (tab === 'teams') {
       const card = (team: Team) =>
-        teamCardHtml(team, players, { hostPid: r.hostPid, meId, manage: isOwner, addAi: isOwner && !inMatch, slots: false, joinable: !!me && me.team !== team });
+        teamCardHtml(team, players, {
+          hostPid: r.hostPid,
+          meId,
+          manage: isOwner,
+          addAi: isOwner && !inMatch,
+          slots: false,
+          joinable: watching ? hasRoom(team) : !!me && me.team !== team,
+          joinLabel: watching ? t('play.joinTeam') : undefined,
+        });
       html += `<div class="tcards">${card(0)}${card(1)}</div>`;
       if (isOwner && players.some((p) => p.id !== meId && p.link !== 'local')) html += `<p class="muted small swipe-hint">${t('play.swipeHint')}</p>`;
     } else {
       html += isOwner ? settingsHtml(st) : `<p class="cfg-summary">${settingsSummary(st)}</p>`;
     }
     html += '</div><div class="pfoot">';
-    if (!inMatch) {
+    if (watching) {
+      if (hasRoom(0) || hasRoom(1)) html += `<button class="primary play-in">${t('play.joinGame')}</button>`;
+      if (!inMatch && r.hostPid >= 0) html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
+    } else if (!inMatch) {
       if (isOwner) html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${t('play.minutes', { n: st.duration / 60 })}</button>`;
       else html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
       if (isHost && ended) html += `<button class="back">${t('play.toLobby')}</button>`;
+      if (!isHost && me) html += `<button class="ghost to-watch">${t('play.toWatch')}</button>`;
     } else if (me) {
       const votes = r.votes[me.team];
       const voted = votes.includes(meId);
@@ -317,7 +354,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       if (isHost) html += `<button class="end">${t('play.end')}</button>`;
     }
     // 教程在新标签页打开，不打断当前连接
-    html += `<div class="pmeta">${lobby ? `<span>${t(isHost ? 'play.hostTip' : 'play.warmup')}</span>` : ''}<a class="panel-guide" href="#/guide" target="_blank" rel="noopener">${t('play.guide')}</a></div></div>`;
+    const tip = watching ? t('play.watchTip') : lobby ? t(isHost ? 'play.hostTip' : 'play.warmup') : '';
+    html += `<div class="pmeta">${tip ? `<span>${tip}</span>` : ''}<a class="panel-guide" href="#/guide" target="_blank" rel="noopener">${t('play.guide')}</a></div></div>`;
     panel.innerHTML = html;
 
     const on = (sel: string, fn: () => void) => {
@@ -335,6 +373,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       renderPanel();
     });
     on('.start', () => send({ t: 'start' }));
+    on('.play-in', () => send({ t: 'play', team: 'auto' }));
+    on('.to-watch', () => send({ t: 'watch' }));
     on('.save-qr', () => saveQrCard({ room, pin: opts?.pin }));
     on('.surrender', () => send({ t: 'surrender' }));
     on('.end', () => confirm(t('play.confirmEnd')) && game?.endMatch());
@@ -348,7 +388,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       addBot: (team) => send({ t: 'bot', team, delta: 1 }),
       owner: (pid) => send({ t: 'owner', pid }),
       kick: (pid) => send({ t: 'kick', pid }),
-      join: (team) => send({ t: 'team', team }),
+      join: (team) => send(watching ? { t: 'play', team } : { t: 'team', team }),
     });
   }
 
@@ -378,14 +418,17 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   window.addEventListener('touchend', tryFs);
   window.addEventListener('click', tryFs);
 
-  $('.go').onclick = () => {
+  const go = (watch: boolean) => {
     enterFullscreen(true).then((ok) => ok && (autoFs = false));
-    join();
+    join(watch);
     if (iosTip && !store.get('sfb.iosTip')) {
       store.set('sfb.iosTip', '1');
       toast(t('play.iosTip'), 7000);
     }
   };
+  $('.go').onclick = () => go(false);
+  const watchGo = app.querySelector<HTMLElement>('.watch-go');
+  if (watchGo) watchGo.onclick = () => go(true);
 
   pad.onPress = (bit) => {
     if (bit === BTN_A || bit === BTN_B || bit === BTN_Y) vibrate(8);
@@ -396,7 +439,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let lastSent = '';
   let lastSentAt = 0;
   setInterval(() => {
-    if (!net?.linked) return;
+    if (!net?.linked || watching) return;
     const key = `${pad.input.jx.toFixed(2)},${pad.input.jy.toFixed(2)},${pad.input.btn}`;
     const now = performance.now();
     const relay = net.state === 'relay';
@@ -472,5 +515,5 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   }
   requestAnimationFrame(frame);
 
-  if (autoJoin) join();
+  if (autoJoin) join(joined === 'w');
 }

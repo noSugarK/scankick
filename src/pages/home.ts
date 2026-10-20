@@ -157,7 +157,7 @@ export function mountHome(app: HTMLElement) {
       .map(([code, r]) => {
         const full = r.n >= r.max;
         const st = full ? ['full', t('lobby.full')] : r.playing ? ['live', t('lobby.live')] : ['open', t('lobby.open')];
-        return `<button class="lrow ${full ? 'is-full' : ''}" role="row" data-code="${code}" data-lock="${r.lock ? 1 : ''}" ${full ? 'disabled' : ''}>
+        return `<button class="lrow ${full ? 'is-full' : ''}" role="row" data-code="${code}" data-lock="${r.lock ? 1 : ''}">
           <span class="mono code">${code}</span>
           <span class="who">${r.host ? esc(r.host) : t('lobby.screen')}${r.lock ? `<i title="${t('lobby.locked')}">${icon.lock}</i>` : ''}</span>
           <span class="mono">${r.n}/${r.max}</span>

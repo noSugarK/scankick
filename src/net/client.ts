@@ -9,6 +9,7 @@ export interface JoinInfo {
   name: string;
   team: Team | 'auto';
   pin?: string;
+  watch?: boolean;
 }
 
 const rid = () => Math.random().toString(36).slice(2, 10);
@@ -69,6 +70,7 @@ export class ClientNet {
         name: this.info.name,
         team: this.info.team,
         pin: this.info.pin,
+        watch: this.info.watch,
       });
     hello();
     clearInterval(this.helloTimer);

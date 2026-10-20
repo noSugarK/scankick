@@ -56,6 +56,8 @@ export interface TeamCardOpts {
   slots: boolean;
   /** 手机端：显示「换到这队」 */
   joinable: boolean;
+  /** 换队按钮文字，默认「换到这队」（观战者是「加入这队」） */
+  joinLabel?: string;
 }
 
 export function teamCardHtml(team: Team, players: PlayerInfo[], o: TeamCardOpts): string {
@@ -70,7 +72,7 @@ export function teamCardHtml(team: Team, players: PlayerInfo[], o: TeamCardOpts)
   const free = max - list.length;
   if (o.addAi && free > 0) rows.push(`<li class="add-ai"><button data-team="${team}">+ ${t('cfg.addAi')}</button></li>`);
   if (o.slots) for (let i = rows.length; i < max; i++) rows.push(`<li class="slot">${t('lobby.emptySlot')}</li>`);
-  const join = o.joinable ? `<button class="tc-join" data-team="${team}">${t('play.switchTeam')}</button>` : '';
+  const join = o.joinable ? `<button class="tc-join" data-team="${team}">${o.joinLabel ?? t('play.switchTeam')}</button>` : '';
   return `<div class="tcard t${team}">
     <div class="tc-head"><span>${TEAM_NAME[team]}</span><span class="tc-count">${list.length}/${max}</span>${join}</div>
     <ul>${rows.join('')}</ul>

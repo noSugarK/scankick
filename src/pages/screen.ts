@@ -27,7 +27,9 @@ export function mountScreen(app: HTMLElement) {
     <img class="game-logo screen-logo" src="${brand('logo-dark-sm.png')}" alt="">
     <div class="net-badge"><i></i><span>${t('status.connectingSignal')}</span></div>
     <button class="ghost end-btn" hidden>${t('screen.end')}</button>
+    <button class="ghost open-lobby" hidden>${t('screen.openPanel')}</button>
     <div class="lobby card">
+      <button class="ghost lobby-close" title="${t('screen.closePanel')} (Esc)" aria-label="${t('screen.closePanel')}">×</button>
       <div class="lobby-join">
         <canvas class="qr"></canvas>
         <div class="room-code">${room}</div>
@@ -38,7 +40,7 @@ export function mountScreen(app: HTMLElement) {
       <div class="lobby-side">
         <div class="lobby-head">
           <img class="lobby-logo" src="${brand('wordmark-dark.png')}" alt="${t('app.name')}">
-          <span class="muted small">${t('play.swipeHint')}</span>
+          <span class="muted small"><span class="watchers"></span>${t('play.swipeHint')}</span>
         </div>
         <div class="tcards"></div>
         <div class="cfg-wrap"></div>
@@ -60,7 +62,12 @@ export function mountScreen(app: HTMLElement) {
   const endBtn = $('.end-btn');
   const badge = $('.net-badge');
   const cfgEl = $('.cfg-wrap');
+  const openBtn = $('.open-lobby');
+  const watchersEl = $('.watchers');
   let cfgHtml = '';
+  // 大厅面板可以收起，好看清球场上的热身；回到大厅时重新展开
+  let lobbyOpen = true;
+  let lastPhase: Phase = Phase.Lobby;
 
   QRCode.toCanvas($('.qr'), qrUrl, { width: 260, margin: 1 });
   QRCode.toCanvas($('.corner-qr canvas'), qrUrl, { width: 110, margin: 1 });
@@ -94,9 +101,17 @@ export function mountScreen(app: HTMLElement) {
       owner: (pid) => game.setOwner(pid),
       kick: (pid) => game.kick(pid),
     });
+    watchersEl.textContent = r.watchers ? `${t('play.watchers', { n: r.watchers })} · ` : '';
     const phase = game.sim.phase;
-    lobbyEl.hidden = phase !== Phase.Lobby;
-    cornerEl.hidden = phase === Phase.Lobby;
+    if (phase !== lastPhase) {
+      if (phase === Phase.Lobby) lobbyOpen = true;
+      lastPhase = phase;
+    }
+    const lobby = phase === Phase.Lobby;
+    lobbyEl.hidden = !lobby || !lobbyOpen;
+    openBtn.hidden = !lobby || lobbyOpen;
+    // 面板收起后二维码挪到角落，仍然可以扫码加入
+    cornerEl.hidden = lobby && lobbyOpen;
     endBtn.hidden = phase === Phase.Lobby || phase === Phase.Ended;
     if (phase === Phase.Ended && r.end) {
       const [a, b] = r.end.score;
@@ -111,6 +126,12 @@ export function mountScreen(app: HTMLElement) {
     } else resultEl.hidden = true;
   }
 
+  const setLobbyOpen = (open: boolean) => {
+    lobbyOpen = open;
+    renderUi(game.rosterMsg());
+  };
+  $('.lobby-close').onclick = () => setLobbyOpen(false);
+  openBtn.onclick = () => setLobbyOpen(true);
   $('.start').onclick = () => game.startMatch();
   $('.save-qr').onclick = () => saveQrCard({ room, pin: opts.pin });
   $('.fs').onclick = () => enterFullscreen();
@@ -123,8 +144,9 @@ export function mountScreen(app: HTMLElement) {
     if ((e.code === 'Space' || e.code === 'Enter') && (phase === Phase.Lobby || phase === Phase.Ended)) game.startMatch();
     if (e.code === 'KeyF') enterFullscreen();
     if (e.code === 'Escape') {
-      if (phase === Phase.Ended) game.toLobby();
-      else if (phase !== Phase.Lobby && confirm(t('play.confirmEnd'))) game.endMatch();
+      if (phase === Phase.Lobby) setLobbyOpen(!lobbyOpen);
+      else if (phase === Phase.Ended) game.toLobby();
+      else if (confirm(t('play.confirmEnd'))) game.endMatch();
     }
   });
 

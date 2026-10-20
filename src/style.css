@@ -161,6 +161,8 @@ h1 {
 .toast[hidden],
 .fs-btn[hidden],
 .end-btn[hidden],
+.open-lobby[hidden],
+.top-actions button[hidden],
 .audio-tip[hidden] {
   display: none;
 }
@@ -542,7 +544,8 @@ h1 {
   display: none;
 }
 @media (orientation: portrait) and (pointer: coarse) {
-  .play.joined .rotate {
+  /* 观战不需要手柄，竖屏也能看 */
+  .play.joined:not(.watching) .rotate {
     position: absolute;
     inset: 0;
     z-index: 30;
@@ -964,7 +967,6 @@ h1 {
 }
 .site .lrow.is-full {
   color: var(--s-mu);
-  cursor: default;
 }
 .lrow.is-full .code,
 .lrow.is-full .st {
@@ -1757,4 +1759,32 @@ li.open .row-actions {
 }
 .lobby .cfg-row {
   justify-content: flex-start;
+}
+
+/* 观战：没有手柄 */
+.play.watching .pad {
+  display: none;
+}
+.join .watch-go {
+  padding: 10px;
+}
+
+/* 大屏大厅面板：右上角收起；收起后右上角有按钮重新打开 */
+.lobby .lobby-close {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+.open-lobby {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+}
+.lobby-head {
+  padding-right: 32px;
 }

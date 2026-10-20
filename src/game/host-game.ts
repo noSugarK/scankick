@@ -31,6 +31,12 @@ interface Slot {
   offlineAt: number;
 }
 
+/** 观战者：只收快照和名单，不占球员名额 */
+interface Watcher {
+  name: string;
+  token: string | null;
+}
+
 const DT = 1 / 60;
 const MAX_HUMANS = CONFIG.maxPerTeam * 2;
 const BOT_NAMES = t('bot.names').split(',');
@@ -56,6 +62,7 @@ export class HostGame {
 
   private slots = new Map<number, Slot>();
   private byCid = new Map<string, number>();
+  private watchers = new Map<string, Watcher>();
   private votes: [Set<number>, Set<number>] = [new Set(), new Set()];
   private pendingEnd: Omit<EndInfo, 'score'> | null = null;
   private timers: number[] = [];
@@ -74,7 +81,12 @@ export class HostGame {
       onHello: (cid, h) => this.onHello(cid, h),
       onPeer: (cid) => {
         const pid = this.byCid.get(cid);
-        if (pid === undefined) return;
+        if (pid === undefined) {
+          if (!this.watchers.has(cid)) return;
+          this.net.sendJson(cid, { t: 'welcome', pid: -1 });
+          this.rosterChanged();
+          return;
+        }
         const s = this.slots.get(pid)!;
         s.info.link = this.net.linkOf(cid) === 'p2p' ? 'p2p' : 'relay';
         this.net.sendJson(cid, { t: 'welcome', pid });
@@ -82,8 +94,10 @@ export class HostGame {
       },
       onJson: (cid, msg) => {
         const pid = this.byCid.get(cid);
-        if (pid === undefined) return;
         if (msg.t === 'ping') this.net.sendJson(cid, { t: 'pong', ts: msg.ts });
+        else if (pid === undefined) {
+          if (msg.t === 'play' && this.watchers.has(cid)) this.promote(cid, msg.team);
+        } else if (msg.t === 'watch') this.demote(pid);
         else this.command(pid, msg);
       },
       onBinary: (cid, data) => {
@@ -98,6 +112,10 @@ export class HostGame {
         this.rosterChanged();
       },
       onLeave: (cid) => {
+        if (this.watchers.delete(cid)) {
+          this.rosterChanged();
+          return;
+        }
         const s = this.slotByCid(cid);
         this.byCid.delete(cid);
         if (!s || s.cid !== cid) return;
@@ -203,6 +221,13 @@ export class HostGame {
       this.byCid.set(cid, existing.info.id);
       return null;
     }
+    // 观战者断线重连会换新的 cid：按 token 去掉旧的记录
+    for (const [c, w] of this.watchers) if (h.token && w.token === h.token && c !== cid) this.net.drop(c);
+    if (h.watch) {
+      if (this.watchers.size >= CONFIG.maxWatchers) return 'watchFull';
+      this.watchers.set(cid, { name, token: h.token || null });
+      return null;
+    }
     if (this.humans().length >= MAX_HUMANS) return 'full';
     const team = this.pickTeam(h.team);
     if (team === null) return 'full';
@@ -210,6 +235,34 @@ export class HostGame {
     s.cid = cid;
     this.byCid.set(cid, s.info.id);
     return null;
+  }
+
+  /** 观战者上场：沿用当前连接，换成球员身份 */
+  private promote(cid: string, want: Team | 'auto') {
+    const w = this.watchers.get(cid)!;
+    const team = this.humans().length < MAX_HUMANS ? this.pickTeam(want === 0 || want === 1 ? want : 'auto') : null;
+    if (team === null) {
+      this.net.sendJson(cid, { t: 'ev', k: 'full' });
+      return;
+    }
+    this.watchers.delete(cid);
+    const link = this.net.linkOf(cid) === 'p2p' ? 'p2p' : 'relay';
+    const s = this.addSlot({ name: w.name, team, bot: false, online: true, link }, w.token);
+    s.cid = cid;
+    this.byCid.set(cid, s.info.id);
+    this.net.sendJson(cid, { t: 'welcome', pid: s.info.id });
+    this.rosterChanged();
+  }
+
+  /** 球员下场观战：比赛进行中不行，免得一方突然少人 */
+  private demote(pid: number) {
+    const s = this.slots.get(pid);
+    if (!s?.cid || this.inMatch() || this.watchers.size >= CONFIG.maxWatchers) return;
+    const cid = s.cid;
+    this.removeSlot(pid);
+    this.watchers.set(cid, { name: s.info.name, token: s.token });
+    this.net.sendJson(cid, { t: 'welcome', pid: -1 });
+    this.rosterChanged();
   }
 
   /** 无大屏模式：把本机作为一名球员加入 */
@@ -328,6 +381,7 @@ export class HostGame {
       need: [this.need(0), this.need(1)],
       end: this.endInfo,
       hostPid: this.ownerPid(),
+      watchers: this.watchers.size,
     };
   }
 

@@ -76,7 +76,7 @@ export interface EndInfo {
 
 /** 结束原因与拒绝原因只传代码，由各端按自己的语言显示 */
 export type EndReason = 'time' | 'host' | 'surrender';
-export type RejectReason = 'pinWrong' | 'pinNeed' | 'pinThrottle' | 'full' | 'notFound' | 'kicked'; // notFound 由客户端超时判定
+export type RejectReason = 'pinWrong' | 'pinNeed' | 'pinThrottle' | 'full' | 'watchFull' | 'notFound' | 'kicked'; // notFound 由客户端超时判定
 
 export interface RosterMsg {
   t: 'roster';
@@ -89,10 +89,13 @@ export interface RosterMsg {
   end: EndInfo | null;
   /** 房主的球员 id（只有房主能开始比赛、改设置、增减 AI），没有则为 -1 */
   hostPid: number;
+  /** 观战人数 */
+  watchers: number;
 }
 
 /** 可靠通道 JSON 消息（主机 -> 客户端） */
 export type HostMsg =
+  /** pid 为 -1 表示以观战者身份进入 */
   | { t: 'welcome'; pid: number }
   | { t: 'reject'; reason: RejectReason }
   | RosterMsg
@@ -101,6 +104,8 @@ export type HostMsg =
   | { t: 'ev'; k: 'tackled' }
   | ({ t: 'ev'; k: 'end' } & EndInfo)
   | { t: 'ev'; k: 'vote'; team: Team; name: string; n: number; need: number; cancel: boolean }
+  /** 观战者申请上场时两队都满了 */
+  | { t: 'ev'; k: 'full' }
   | { t: 'pong'; ts: number };
 
 /** 可靠通道 JSON 消息（客户端 -> 主机） */
@@ -113,4 +118,7 @@ export type ClientMsg =
   | { t: 'bot'; team: Team; delta: 1 | -1 }
   | { t: 'kick'; pid: number }
   | { t: 'owner'; pid: number }
+  /** 观战者上场（team 为 auto 时自动分队） / 球员下场观战 */
+  | { t: 'play'; team: Team | 'auto' }
+  | { t: 'watch' }
   | { t: 'ping'; ts: number };

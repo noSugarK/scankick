@@ -11,6 +11,8 @@ export interface Hello {
   name: string;
   team: Team | 'auto';
   pin?: string;
+  /** 只观战，不占球员名额 */
+  watch?: boolean;
 }
 
 export interface HostCallbacks {

@@ -14,4 +14,6 @@ export const CONFIG = {
   // 超过该时间 P2P 仍未建立，则改走 MQTT 中继
   p2pTimeoutMs: 6000,
   maxPerTeam: 4,
+  // 观战人数上限：每个观战者都要单独收发快照，主机带宽有限
+  maxWatchers: 12,
 };
