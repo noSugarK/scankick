@@ -27,6 +27,3 @@ function route() {
 // 页面各自持有网络连接与定时器，切换路由时直接整页重载最稳妥
 window.addEventListener('hashchange', () => location.reload());
 route();
-
-// iOS Safari 双指缩放
-document.addEventListener('gesturestart', (e) => e.preventDefault());

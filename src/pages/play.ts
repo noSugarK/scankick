@@ -42,6 +42,9 @@ const STATE_TEXT: Record<ClientState, Key> = {
 export type PlayMode = { kind: 'client'; room: string; forceRelay: boolean; pin: string; lock: boolean } | { kind: 'host' };
 
 export function mountPlay(app: HTMLElement, mode: PlayMode) {
+  // 只在手机比赛页拦截双指缩放：两个拇指同时按摇杆和按键时 iOS 会当成捏合。
+  // 其它页面不拦，否则 Mac Safari 智能缩放放大后就缩不回来了
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
   const isHost = mode.kind === 'host';
   const forceRelay = mode.kind === 'client' && mode.forceRelay;
   let room: string;
