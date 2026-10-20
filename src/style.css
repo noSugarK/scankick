@@ -499,9 +499,6 @@ h1 {
 .panel p {
   margin: 0;
 }
-.panel .final {
-  font-size: 40px;
-}
 .panel-head {
   display: flex;
   align-items: center;
@@ -1787,4 +1784,141 @@ li.open .row-actions {
 }
 .lobby-head {
   padding-right: 32px;
+}
+
+/* ---------- 战绩 ---------- */
+/* 手机结算：一行比分 + 结果，可关闭，不占设置和名单的位置 */
+.result-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px 6px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+}
+.result-strip .result-x {
+  margin-left: auto;
+  padding: 2px 9px;
+  font-size: 15px;
+  line-height: 1;
+}
+.rs-score {
+  font-size: 18px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.rs-reason {
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.stats th {
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 4px 4px;
+}
+.stats td {
+  white-space: nowrap;
+  padding: 5px 4px;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.stats td.z {
+  color: var(--muted);
+  opacity: 0.5;
+}
+.stats td.nm {
+  text-align: left;
+  max-width: 0;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stats tr.me td {
+  background: rgba(255, 255, 255, 0.06);
+}
+.stats .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  vertical-align: 1px;
+}
+.mvp {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: #f5b82e;
+  color: #1a1300;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 800;
+}
+.st-sec + .st-sec {
+  margin-top: 12px;
+}
+.st-title {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.st-old summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.st-old .rs-score {
+  font-size: 14px;
+}
+.st-old .rs-title {
+  color: var(--fg);
+}
+/* 大屏结算：MVP 一行和个人数据表 */
+.result .mvp-line {
+  margin: 4px 0 10px;
+}
+.result .stats {
+  min-width: 360px;
+  margin-bottom: 14px;
+  font-size: 15px;
+}
+
+/* 面板底部：主按钮占满，次要按钮跟在右边 */
+.pfoot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pfoot-row > .start,
+.pfoot-row > .wait-owner {
+  flex: 1;
+}
+.pfoot-row > .back,
+.pfoot-row > .to-watch {
+  flex: none;
+  white-space: nowrap;
+}
+/* 内容区至少留几行高度，矮屏时整个面板滚动 */
+.pbody {
+  min-height: 92px;
+}
+.panel {
+  overflow-y: auto;
 }

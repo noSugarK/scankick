@@ -4,6 +4,7 @@ import { Renderer, TEAM_COLOR } from '../game/render';
 import { Phase, type RosterMsg, type Team } from '../game/types';
 import { t } from '../i18n';
 import { saveQrCard } from '../ui/qrcard';
+import { mvpLineHtml, statsTableHtml } from '../ui/stats-ui';
 import { bindLobby, pinLineHtml, settingsHtml, teamCardHtml } from '../ui/settings-ui';
 import { icon } from '../ui/site';
 import { audioReady, unlockAudio } from '../ui/sound';
@@ -119,6 +120,8 @@ export function mountScreen(app: HTMLElement) {
         <h2>${resultTitle(r.end)}</h2>
         <p class="muted">${esc(endReasonText(r.end))}</p>
         <div class="final"><span style="color:${TEAM_COLOR[0]}">${a}</span> : <span style="color:${TEAM_COLOR[1]}">${b}</span></div>
+        ${mvpLineHtml(r.end)}
+        ${r.end.stats.length ? statsTableHtml(r.end) : ''}
         <div class="row"><button class="primary again">${t('play.again')}</button><button class="back">${t('play.toLobby')}</button></div>`;
       resultEl.querySelector<HTMLElement>('.again')!.onclick = () => game.startMatch();
       resultEl.querySelector<HTMLElement>('.back')!.onclick = () => game.toLobby();

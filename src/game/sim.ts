@@ -38,8 +38,10 @@ const SHOT_MAX = 1060;
 const CHARGE_TIME = 0.85;
 
 export type SimEvent =
-  | { k: 'goal'; team: Team; scorer: number; own: boolean }
-  | { k: 'kick'; id: number; power: number }
+  /** assist：进球前本队最后一个传给射手的人，没有为 -1 */
+  | { k: 'goal'; team: Team; scorer: number; own: boolean; assist: number }
+  /** shot：用射门键朝对方球门方向踢出 */
+  | { k: 'kick'; id: number; power: number; shot: boolean }
   | { k: 'tackled'; id: number; by: number }
   | { k: 'whistle' }
   | { k: 'end' };
@@ -92,7 +94,8 @@ export class Sim {
   timeLeft = 180;
   duration = 180;
   score: [number, number] = [0, 0];
-  ball = { x: 0, y: 0, vx: 0, vy: 0, lastTouch: -1, lastTeam: -1 as Team | -1 };
+  // prevTouch：上一个（不同的）触球者，用来算助攻
+  ball = { x: 0, y: 0, vx: 0, vy: 0, lastTouch: -1, lastTeam: -1 as Team | -1, prevTouch: -1, prevTeam: -1 as Team | -1 };
   players = new Map<number, SimPlayer>();
   kickoffTeam: Team = 0;
   kickoffPending = false;
@@ -194,7 +197,7 @@ export class Sim {
   }
 
   private placeAll() {
-    Object.assign(this.ball, { x: 0, y: 0, vx: 0, vy: 0, lastTouch: -1, lastTeam: -1 });
+    Object.assign(this.ball, { x: 0, y: 0, vx: 0, vy: 0, lastTouch: -1, lastTeam: -1, prevTouch: -1, prevTeam: -1 });
     for (const team of [0, 1] as Team[]) {
       const list = this.teamPlayers(team);
       list.forEach((p, i) => {
@@ -387,6 +390,11 @@ export class Sim {
   }
 
   private touch(p: SimPlayer) {
+    const b = this.ball;
+    if (b.lastTouch !== p.id) {
+      b.prevTouch = b.lastTouch;
+      b.prevTeam = b.lastTeam;
+    }
     this.ball.lastTouch = p.id;
     this.ball.lastTeam = p.team;
     if (this.kickoffPending && this.phase === Phase.Playing) this.kickoffPending = false;
@@ -404,7 +412,8 @@ export class Sim {
     let dirX: number;
     let dirY: number;
     let speed: number;
-    if (p.kickBuf > 0) {
+    const kick = p.kickBuf > 0;
+    if (kick) {
       // 主要沿朝向，略带“脚-球”方向，更符合直觉
       dirX = fx * 0.8 + (dx / (d || 1)) * 0.2;
       dirY = fy * 0.8 + (dy / (d || 1)) * 0.2;
@@ -429,7 +438,9 @@ export class Sim {
     p.passBuf = 0;
     p.kickCd = 0.25;
     this.touch(p);
-    this.events.push({ k: 'kick', id: p.id, power: speed });
+    // 朝对方球门方向（红队向右）的射门才算一次射门
+    const shot = kick && (p.team === 0 ? dirX > 0 : dirX < 0);
+    this.events.push({ k: 'kick', id: p.id, power: speed, shot });
   }
 
   /** 在朝向扇区内挑选最合适的队友，带提前量 */
@@ -562,7 +573,9 @@ export class Sim {
         if (crossed) {
           const team: Team = b.x > 0 ? 0 : 1;
           this.score[team]++;
-          this.events.push({ k: 'goal', team, scorer: b.lastTouch, own: b.lastTeam !== -1 && b.lastTeam !== team });
+          const own = b.lastTeam !== -1 && b.lastTeam !== team;
+          const assist = !own && b.prevTeam === team ? b.prevTouch : -1;
+          this.events.push({ k: 'goal', team, scorer: b.lastTouch, own, assist });
           this.kickoffTeam = team === 0 ? 1 : 0;
           this.phase = Phase.Goal;
           this.phaseTime = 0;

@@ -68,10 +68,27 @@ export interface Settings {
   level: BotLevel;
 }
 
+/** 单场个人数据：进球 / 助攻 / 射门 / 铲断 */
+export interface PlayerStat {
+  id: number;
+  name: string;
+  team: Team;
+  bot: boolean;
+  g: number;
+  a: number;
+  s: number;
+  t: number;
+}
+
 export interface EndInfo {
   score: [number, number];
   winner: Team | -1;
   reason: EndReason;
+  /** 结束时间（毫秒时间戳） */
+  at: number;
+  stats: PlayerStat[];
+  /** 本场最佳的球员 id，没人有数据时为 -1 */
+  mvp: number;
 }
 
 /** 结束原因与拒绝原因只传代码，由各端按自己的语言显示 */
@@ -106,7 +123,9 @@ export type HostMsg =
   | { t: 'ev'; k: 'vote'; team: Team; name: string; n: number; need: number; cancel: boolean }
   /** 观战者申请上场时两队都满了 */
   | { t: 'ev'; k: 'full' }
-  | { t: 'pong'; ts: number };
+  | { t: 'pong'; ts: number }
+  /** 本房间最近的比赛，新的在前；比赛结束和刚连上时发送 */
+  | { t: 'history'; list: EndInfo[] };
 
 /** 可靠通道 JSON 消息（客户端 -> 主机） */
 export type ClientMsg =

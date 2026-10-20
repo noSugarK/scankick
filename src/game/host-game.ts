@@ -18,6 +18,7 @@ import {
   type HostMsg,
   type Input,
   type PlayerInfo,
+  type PlayerStat,
   type RejectReason,
   type RosterMsg,
   type Settings,
@@ -40,6 +41,11 @@ interface Watcher {
 const DT = 1 / 60;
 const MAX_HUMANS = CONFIG.maxPerTeam * 2;
 const BOT_NAMES = t('bot.names').split(',');
+/** 房间里保留的历史比赛场数 */
+const HISTORY_MAX = 10;
+
+/** 本场最佳评分：进球 3 分、助攻 2 分、铲断 1 分、射门 0.5 分 */
+export const statScore = (p: PlayerStat) => p.g * 3 + p.a * 2 + p.t + p.s * 0.5;
 
 /**
  * 主机：运行比赛、管理玩家、收发网络消息。
@@ -51,6 +57,8 @@ export class HostGame {
   readonly settings: Settings = { duration: 180, autoFill: true, bots: [0, 0], level: 1 };
   goalText = '';
   endInfo: EndInfo | null = null;
+  /** 本房间最近的比赛，新的在前 */
+  readonly history: EndInfo[] = [];
   /** 本机球员（无大屏模式），-1 表示没有 */
   localPid = -1;
 
@@ -64,7 +72,9 @@ export class HostGame {
   private byCid = new Map<string, number>();
   private watchers = new Map<string, Watcher>();
   private votes: [Set<number>, Set<number>] = [new Set(), new Set()];
-  private pendingEnd: Omit<EndInfo, 'score'> | null = null;
+  private pendingEnd: Pick<EndInfo, 'reason' | 'winner'> | null = null;
+  /** 本场个人数据；中途离开的球员也保留 */
+  private stats = new Map<number, PlayerStat>();
   private timers: number[] = [];
   private pinFails: number[] = [];
   /** 被踢玩家的 token：本局房间内不能再加入 */
@@ -84,12 +94,14 @@ export class HostGame {
         if (pid === undefined) {
           if (!this.watchers.has(cid)) return;
           this.net.sendJson(cid, { t: 'welcome', pid: -1 });
+          this.sendHistory(cid);
           this.rosterChanged();
           return;
         }
         const s = this.slots.get(pid)!;
         s.info.link = this.net.linkOf(cid) === 'p2p' ? 'p2p' : 'relay';
         this.net.sendJson(cid, { t: 'welcome', pid });
+        this.sendHistory(cid);
         this.rosterChanged();
       },
       onJson: (cid, msg) => {
@@ -499,12 +511,30 @@ export class HostGame {
     this.rosterChanged();
   }
 
+  private sendHistory(cid: string) {
+    if (this.history.length) this.net.sendJson(cid, { t: 'history', list: this.history });
+  }
+
+  /** 取某人的本场数据，第一次用到时创建 */
+  private stat(pid: number): PlayerStat | null {
+    let st = this.stats.get(pid);
+    if (!st) {
+      const s = this.slots.get(pid);
+      if (!s) return null;
+      st = { id: pid, name: s.info.name, team: s.info.team, bot: s.info.bot, g: 0, a: 0, s: 0, t: 0 };
+      this.stats.set(pid, st);
+    }
+    return st;
+  }
+
   startMatch() {
     if (this.sim.phase !== Phase.Lobby && this.sim.phase !== Phase.Ended) return;
     this.votes = [new Set(), new Set()];
     this.endInfo = null;
     this.goalText = '';
     this.rebalanceBots();
+    this.stats.clear();
+    for (const id of this.slots.keys()) this.stat(id);
     this.sim.startMatch(this.settings.duration);
     this.rosterChanged();
   }
@@ -580,10 +610,18 @@ export class HostGame {
     for (const ev of sim.events) {
       switch (ev.k) {
         case 'kick':
+          if (ev.shot && sim.phase === Phase.Playing) {
+            const st = this.stat(ev.id);
+            if (st) st.s++;
+          }
           sfxKick(ev.power);
           this.sendTo(ev.id, { t: 'ev', k: 'kick' });
           break;
         case 'tackled':
+          if (sim.phase === Phase.Playing) {
+            const st = this.stat(ev.by);
+            if (st) st.t++;
+          }
           sfxKick(300);
           this.sendTo(ev.id, { t: 'ev', k: 'tackled' });
           break;
@@ -593,6 +631,12 @@ export class HostGame {
         case 'goal': {
           sfxGoal();
           const scorer = this.slots.get(ev.scorer)?.info.name ?? '';
+          if (!ev.own) {
+            const g = this.stat(ev.scorer);
+            if (g) g.g++;
+            const a = ev.assist >= 0 ? this.stat(ev.assist) : null;
+            if (a) a.a++;
+          }
           this.goalText = goalText(ev.team, scorer, ev.own);
           this.broadcast({ t: 'ev', k: 'goal', team: ev.team, scorer, own: ev.own });
           break;
@@ -601,14 +645,36 @@ export class HostGame {
           sfxWhistle(true);
           const p = this.pendingEnd ?? { reason: 'time' as const, winner: this.scoreWinner() };
           this.pendingEnd = null;
-          this.endInfo = { score: [sim.score[0], sim.score[1]], ...p };
+          this.endInfo = { score: [sim.score[0], sim.score[1]], ...p, at: Date.now(), ...this.finalStats() };
+          this.history.unshift(this.endInfo);
+          this.history.length = Math.min(this.history.length, HISTORY_MAX);
           this.broadcast({ t: 'ev', k: 'end', ...this.endInfo });
+          this.broadcast({ t: 'history', list: this.history });
           this.rosterChanged();
           break;
         }
       }
     }
     sim.events.length = 0;
+  }
+
+  /** 结束时整理个人数据：还在场的人用最新的名字和队伍，按队伍和评分排序，并选出 MVP */
+  private finalStats(): Pick<EndInfo, 'stats' | 'mvp'> {
+    const list = [...this.stats.values()].map((st) => {
+      const s = this.slots.get(st.id);
+      return s ? { ...st, name: s.info.name, team: s.info.team } : { ...st };
+    });
+    list.sort((a, b) => a.team - b.team || statScore(b) - statScore(a));
+    // 至少要有一个进球、助攻或铲断才评 MVP，光射门不算
+    let mvp = -1;
+    let best = 0.99;
+    for (const st of list) {
+      if (statScore(st) > best) {
+        best = statScore(st);
+        mvp = st.id;
+      }
+    }
+    return { stats: list, mvp };
   }
 
   view(meId: number): ViewState {

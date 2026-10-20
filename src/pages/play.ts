@@ -1,6 +1,7 @@
 import QRCode from 'qrcode';
-import { HostGame, endReasonText, resultTitle } from '../game/host-game';
+import { HostGame } from '../game/host-game';
 import { Renderer, TEAM_COLOR, TEAM_NAME, goalText as goalLabel, type ViewState } from '../game/render';
+import { resultLineHtml, statsTabHtml } from '../ui/stats-ui';
 import { predictMove } from '../game/sim';
 import {
   BTN_A,
@@ -10,6 +11,7 @@ import {
   FLAG_TACKLE,
   Phase,
   type ClientMsg,
+  type EndInfo,
   type PlayerInfo,
   type RosterMsg,
   type Snapshot,
@@ -129,7 +131,11 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let rtt = 0;
   let goalText = '';
   let panelOpen = false;
-  let panelTab: 'teams' | 'settings' = 'teams';
+  let panelTab: 'teams' | 'settings' | 'stats' = 'teams';
+  /** 本房间最近的比赛（新的在前） */
+  let history: EndInfo[] = [];
+  /** 结算条被手动关掉；下一场结束时重新显示 */
+  let resultClosed = false;
   // 本机是主机时：还没人加入就展开二维码方便扫码，有人加入后默认收起；手动切换过就按手动的来
   let qrOpen: boolean | null = null;
   let lastPhase: Phase | -1 = -1;
@@ -255,6 +261,10 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         players = m.players;
         renderPanel();
         break;
+      case 'history':
+        history = m.list;
+        renderPanel();
+        break;
       case 'pong':
         rtt = rtt ? rtt * 0.7 + (performance.now() - m.ts) * 0.3 : performance.now() - m.ts;
         if (net) setStatus(net.state);
@@ -270,6 +280,9 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
           vibrate(me && me.team === m.team ? [120, 60, 120, 60, 200] : 200);
         } else if (m.k === 'end') {
           vibrate([300, 100, 300]);
+          // 结束后先看本场战绩；结算缩成一行，队伍和设置仍然一点就到
+          panelTab = 'stats';
+          resultClosed = false;
         } else if (m.k === 'full') {
           toast(t('play.joinFull'), 2500);
         } else if (m.k === 'vote') {
@@ -293,7 +306,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const me = players.find((p) => p.id === meId);
     const isOwner = meId >= 0 && meId === r.hostPid;
     const st = r.settings;
-    const showQr = qrOpen ?? !players.some((p) => !p.bot && p.id !== meId);
+    // 结算时默认收起二维码，把位置留给战绩
+    const showQr = qrOpen ?? (!ended && !players.some((p) => !p.bot && p.id !== meId));
 
     // 头部：房间信息、二维码开关（本机是主机时）、关闭
     const watchers = r.watchers ? ` · ${t('play.watchers', { n: r.watchers })}` : '';
@@ -306,17 +320,16 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         <div class="muted small">${t('play.scanToJoin')}${opts?.listed ? t('play.listed') : ''}</div>
         <button class="ghost save-qr">${icon.download}${t('qr.save')}</button></div></div>`;
     }
-    if (ended && r.end) {
-      const [a, b] = r.end.score;
-      html += `<div class="final"><span style="color:${TEAM_COLOR[0]}">${a}</span> : <span style="color:${TEAM_COLOR[1]}">${b}</span></div>
-        <p><b>${resultTitle(r.end)}</b> <span class="muted small">${esc(endReasonText(r.end))}</span></p>`;
+    if (ended && r.end && !resultClosed) {
+      html += `<div class="result-strip">${resultLineHtml(r.end)}<button class="ghost result-x" aria-label="${t('screen.closePanel')}">×</button></div>`;
     }
 
-    // 大厅 / 结算有「队伍 / 设置」两个标签；比赛中只看队伍
+    // 大厅 / 结算有「队伍 / 设置 / 战绩」三个标签；比赛中只看队伍
     const tab = inMatch ? 'teams' : panelTab;
     if (!inMatch) {
-      html += `<div class="ptabs">${(['teams', 'settings'] as const)
-        .map((k) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${t(k === 'teams' ? 'play.tabTeams' : 'play.tabSettings')}</button>`)
+      const label = { teams: t('play.tabTeams'), settings: t('play.tabSettings'), stats: t('stats.tab') };
+      html += `<div class="ptabs">${(['teams', 'settings', 'stats'] as const)
+        .map((k) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${label[k]}</button>`)
         .join('')}</div>`;
     }
     html += '<div class="pbody">';
@@ -335,6 +348,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         });
       html += `<div class="tcards">${card(0)}${card(1)}</div>`;
       if (isOwner && players.some((p) => p.id !== meId && p.link !== 'local')) html += `<p class="muted small swipe-hint">${t('play.swipeHint')}</p>`;
+    } else if (tab === 'stats') {
+      html += statsTabHtml(history, meId, me?.name ?? '');
     } else {
       html += isOwner ? settingsHtml(st) : `<p class="cfg-summary">${settingsSummary(st)}</p>`;
     }
@@ -343,10 +358,13 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       if (hasRoom(0) || hasRoom(1)) html += `<button class="primary play-in">${t('play.joinGame')}</button>`;
       if (!inMatch && r.hostPid >= 0) html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
     } else if (!inMatch) {
+      // 主按钮和次要按钮放一行，省出高度给名单 / 设置 / 战绩
+      html += '<div class="pfoot-row">';
       if (isOwner) html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${t('play.minutes', { n: st.duration / 60 })}</button>`;
       else html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
       if (isHost && ended) html += `<button class="back">${t('play.toLobby')}</button>`;
       if (!isHost && me) html += `<button class="ghost to-watch">${t('play.toWatch')}</button>`;
+      html += '</div>';
     } else if (me) {
       const votes = r.votes[me.team];
       const voted = votes.includes(meId);
@@ -370,6 +388,10 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     });
     on('.qr-toggle', () => {
       qrOpen = !showQr;
+      renderPanel();
+    });
+    on('.result-x', () => {
+      resultClosed = true;
       renderPanel();
     });
     on('.start', () => send({ t: 'start' }));
