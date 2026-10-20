@@ -1,5 +1,4 @@
 import QRCode from 'qrcode';
-import { LEVEL_NAME } from '../game/ai';
 import { HostGame, endReasonText, resultTitle } from '../game/host-game';
 import { Renderer, TEAM_COLOR, TEAM_NAME, goalText as goalLabel, type ViewState } from '../game/render';
 import { predictMove } from '../game/sim';
@@ -22,7 +21,7 @@ import { CONFIG } from '../config';
 import { t, type Key } from '../i18n';
 import { Gamepad } from '../ui/gamepad';
 import { saveQrCard } from '../ui/qrcard';
-import { bindSettings, pinLineHtml, playerTag, settingsHtml } from '../ui/settings-ui';
+import { bindLobby, pinLineHtml, settingsHtml, settingsSummary, teamCardHtml } from '../ui/settings-ui';
 import { icon } from '../ui/site';
 import { unlockAudio } from '../ui/sound';
 import type { Team } from '../game/types';
@@ -125,6 +124,9 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let rtt = 0;
   let goalText = '';
   let panelOpen = false;
+  let panelTab: 'teams' | 'settings' = 'teams';
+  // 本机是主机时：还没人加入就展开二维码方便扫码，有人加入后默认收起；手动切换过就按手动的来
+  let qrOpen: boolean | null = null;
   let lastPhase: Phase | -1 = -1;
 
   const toast = (text: string, ms = 2000) => {
@@ -248,19 +250,6 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   }
 
   // ---------- 面板（大厅/结算/菜单） ----------
-  /** 某队成员：标出房主、自己、AI、掉线与连接方式 */
-  function memberList(team: number) {
-    return players
-      .filter((p) => p.team === team)
-      .sort((a, b) => a.num - b.num)
-      .map((p) => {
-        const you = p.id === meId ? ` <small>(${t('play.you')})</small>` : '';
-        const owner = p.id === roster?.hostPid ? `<i class="owner">${t('role.owner')}</i>` : '';
-        return `<li class="${p.online ? '' : 'off'}"><span class="nm">${esc(p.name)}${you}</span>${owner}<em>${playerTag(p)}</em></li>`;
-      })
-      .join('');
-  }
-
   function renderPanel() {
     const { phase } = current();
     const lobby = phase === Phase.Lobby;
@@ -268,51 +257,72 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const inMatch = !lobby && !ended;
     panel.hidden = !panelOpen || !joinEl.hidden;
     if (panel.hidden || !roster) return;
+    const r = roster;
     const me = players.find((p) => p.id === meId);
-    const count = (t: number) => players.filter((p) => p.team === t && !p.bot).length;
-    let html = `<div class="panel-head">${t('play.room', { room: `<b>${esc(room)}</b>` })} · ${t('play.online', { n: players.filter((p) => !p.bot).length })}`;
+    const isOwner = meId >= 0 && meId === r.hostPid;
+    const st = r.settings;
+    const showQr = qrOpen ?? !players.some((p) => !p.bot && p.id !== meId);
+
+    // 头部：房间信息、二维码开关（本机是主机时）、关闭
+    let html = `<div class="panel-head"><span>${t('play.room', { room: `<b>${esc(room)}</b>` })} · ${t('play.online', { n: players.filter((p) => !p.bot).length })}</span>`;
+    if (isHost) html += `<button class="ghost qr-toggle">${t('play.qr')} ${showQr ? '▴' : '▾'}</button>`;
     html += `<button class="ghost close" aria-label="close">×</button></div>`;
-    const isOwner = meId >= 0 && meId === roster.hostPid;
-    if (isHost && !inMatch) {
+    if (isHost && showQr) {
       html += `<div class="host-qr">${qrUrl ? `<img src="${qrUrl}" alt="">` : ''}<div>
         <div class="room-code sm">${esc(room)}</div>${pinLineHtml(opts?.pin)}
         <div class="muted small">${t('play.scanToJoin')}${opts?.listed ? t('play.listed') : ''}</div>
         <button class="ghost save-qr">${icon.download}${t('qr.save')}</button></div></div>`;
     }
-    if (ended && roster.end) {
-      const [a, b] = roster.end.score;
+    if (ended && r.end) {
+      const [a, b] = r.end.score;
       html += `<div class="final"><span style="color:${TEAM_COLOR[0]}">${a}</span> : <span style="color:${TEAM_COLOR[1]}">${b}</span></div>
-        <p><b>${resultTitle(roster.end)}</b> <span class="muted small">${esc(endReasonText(roster.end))}</span></p>`;
+        <p><b>${resultTitle(r.end)}</b> <span class="muted small">${esc(endReasonText(r.end))}</span></p>`;
     }
-    html += `<div class="seg team-switch">
-        <button data-team="0" style="--c:${TEAM_COLOR[0]}" class="${me?.team === 0 ? 'on' : ''}">${TEAM_NAME[0]} ${count(0)}</button>
-        <button data-team="1" style="--c:${TEAM_COLOR[1]}" class="${me?.team === 1 ? 'on' : ''}">${TEAM_NAME[1]} ${count(1)}</button>
-      </div>`;
-    html += `<div class="roster-cols"><ul class="t0">${memberList(0)}</ul><ul class="t1">${memberList(1)}</ul></div>`;
-    if (!inMatch && isOwner) html += settingsHtml(roster.settings, players);
-    else if (!inMatch) html += `<p class="muted small cfg-summary">${t('play.minutes', { n: roster.settings.duration / 60 })} · AI ${LEVEL_NAME[roster.settings.level]}</p>`;
-    if (!inMatch && !isOwner) html += `<p class="wait-owner">${t('play.waitOwner')}</p>`;
-    if (!inMatch && isOwner) {
-      html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${t('play.minutes', { n: roster.settings.duration / 60 })}</button>`;
+
+    // 大厅 / 结算有「队伍 / 设置」两个标签；比赛中只看队伍
+    const tab = inMatch ? 'teams' : panelTab;
+    if (!inMatch) {
+      html += `<div class="ptabs">${(['teams', 'settings'] as const)
+        .map((k) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${t(k === 'teams' ? 'play.tabTeams' : 'play.tabSettings')}</button>`)
+        .join('')}</div>`;
+    }
+    html += '<div class="pbody">';
+    if (tab === 'teams') {
+      const card = (team: Team) =>
+        teamCardHtml(team, players, { hostPid: r.hostPid, meId, manage: isOwner, addAi: isOwner && !inMatch, slots: false, joinable: !!me && me.team !== team });
+      html += `<div class="tcards">${card(0)}${card(1)}</div>`;
+      if (isOwner && players.some((p) => p.id !== meId && p.link !== 'local')) html += `<p class="muted small swipe-hint">${t('play.swipeHint')}</p>`;
+    } else {
+      html += isOwner ? settingsHtml(st) : `<p class="cfg-summary">${settingsSummary(st)}</p>`;
+    }
+    html += '</div><div class="pfoot">';
+    if (!inMatch) {
+      if (isOwner) html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${t('play.minutes', { n: st.duration / 60 })}</button>`;
+      else html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
       if (isHost && ended) html += `<button class="back">${t('play.toLobby')}</button>`;
-    }
-    if (inMatch && me) {
-      const votes = roster.votes[me.team];
+    } else if (me) {
+      const votes = r.votes[me.team];
       const voted = votes.includes(meId);
-      html += `<button class="surrender ${voted ? '' : 'danger'}">${t(voted ? 'play.unsurrender' : 'play.surrender')} (${votes.length}/${roster.need[me.team]})</button>`;
+      html += `<button class="surrender ${voted ? '' : 'danger'}">${t(voted ? 'play.unsurrender' : 'play.surrender')} (${votes.length}/${r.need[me.team]})</button>`;
       if (isHost) html += `<button class="end">${t('play.end')}</button>`;
     }
-    if (lobby) html += `<p class="muted small">${t(isHost ? 'play.hostTip' : 'play.warmup')}</p>`;
-    // 新标签页打开，不打断当前连接
-    html += `<a class="panel-guide" href="#/guide" target="_blank" rel="noopener">${t('play.guide')}</a>`;
+    // 教程在新标签页打开，不打断当前连接
+    html += `<div class="pmeta">${lobby ? `<span>${t(isHost ? 'play.hostTip' : 'play.warmup')}</span>` : ''}<a class="panel-guide" href="#/guide" target="_blank" rel="noopener">${t('play.guide')}</a></div></div>`;
     panel.innerHTML = html;
 
     const on = (sel: string, fn: () => void) => {
       const el = panel.querySelector<HTMLElement>(sel);
       if (el) el.onclick = fn;
     };
-    panel.querySelectorAll<HTMLButtonElement>('.team-switch button').forEach((b) => {
-      b.onclick = () => send({ t: 'team', team: Number(b.dataset.team) as 0 | 1 });
+    panel.querySelectorAll<HTMLButtonElement>('.ptabs button').forEach((b) => {
+      b.onclick = () => {
+        panelTab = b.dataset.tab as typeof panelTab;
+        renderPanel();
+      };
+    });
+    on('.qr-toggle', () => {
+      qrOpen = !showQr;
+      renderPanel();
     });
     on('.start', () => send({ t: 'start' }));
     on('.save-qr', () => saveQrCard({ room, pin: opts?.pin }));
@@ -323,7 +333,13 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       panelOpen = false;
       renderPanel();
     });
-    bindSettings(panel, { settings: (patch) => send({ t: 'settings', patch }), bot: (team, delta) => send({ t: 'bot', team, delta }) });
+    bindLobby(panel, players, {
+      settings: (patch) => send({ t: 'settings', patch }),
+      addBot: (team) => send({ t: 'bot', team, delta: 1 }),
+      owner: (pid) => send({ t: 'owner', pid }),
+      kick: (pid) => send({ t: 'kick', pid }),
+      join: (team) => send({ t: 'team', team }),
+    });
   }
 
   $('.menu').onclick = () => {

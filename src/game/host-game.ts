@@ -60,6 +60,10 @@ export class HostGame {
   private pendingEnd: Omit<EndInfo, 'score'> | null = null;
   private timers: number[] = [];
   private pinFails: number[] = [];
+  /** 被踢玩家的 token：本局房间内不能再加入 */
+  private kicked = new Set<string>();
+  /** 被转让的房主；他在线时优先，掉线时按默认规则临时顺延 */
+  private ownerOverride: number | null = null;
   private readonly lobby: LobbyPublisher;
 
   constructor(
@@ -157,6 +161,7 @@ export class HostGame {
     this.sim.removePlayer(id);
     this.votes[0].delete(id);
     this.votes[1].delete(id);
+    if (this.ownerOverride === id) this.ownerOverride = null;
     forgetBot(id);
   }
 
@@ -174,6 +179,7 @@ export class HostGame {
   }
 
   private onHello(cid: string, h: Hello): RejectReason | null {
+    if (h.token && this.kicked.has(h.token)) return 'kicked';
     const pin = this.opts.pin;
     if (pin && h.pin !== pin) {
       // 全局限速：10 秒内最多 5 次错误，4 位密码穷举需要数小时
@@ -268,8 +274,40 @@ export class HostGame {
     return Math.floor(this.humans(team).filter((s) => s.info.online).length / 2) + 1;
   }
 
+  /** 转让房主：只能给在线真人（大屏直接调用，手机房主经 command 校验后调用） */
+  setOwner(pid: number) {
+    const s = this.slots.get(pid);
+    if (!s || s.info.bot || !s.info.online) return;
+    this.ownerOverride = pid;
+    this.rosterChanged();
+  }
+
+  /** 移出成员（大屏直接调用，手机房主经 command 校验后调用）；本机球员不能移出 */
+  kick(pid: number) {
+    const s = this.slots.get(pid);
+    if (!s || s.info.link === 'local') return;
+    if (s.info.bot) {
+      // 删掉指定的 AI：转为手动 AI 数量，否则自动补位会马上补回来
+      if (this.inMatch()) return;
+      const team = s.info.team;
+      this.settings.autoFill = false;
+      this.settings.bots = [this.botCount(0), this.botCount(1)];
+      this.settings.bots[team] = Math.max(0, this.settings.bots[team] - 1);
+      this.removeSlot(pid);
+      this.rosterChanged();
+      return;
+    }
+    if (s.token) this.kicked.add(s.token);
+    const cid = s.cid;
+    this.removeSlot(pid);
+    if (cid) this.net.kick(cid, 'kicked');
+    this.rosterChanged();
+  }
+
   /** 房主：手机开房时是本机；大屏模式下是最早加入且在线的真人，掉线后顺延给下一位 */
   ownerPid(): number {
+    const o = this.ownerOverride !== null ? this.slots.get(this.ownerOverride) : undefined;
+    if (o?.info.online) return o.info.id;
     if (this.localPid >= 0) return this.localPid;
     for (const s of this.slots.values()) if (!s.info.bot && s.info.online) return s.info.id;
     return -1;
@@ -357,6 +395,12 @@ export class HostGame {
         break;
       case 'settings':
         if (pid === this.ownerPid() && msg.patch && typeof msg.patch === 'object') this.setSettings(msg.patch);
+        break;
+      case 'owner':
+        if (pid === this.ownerPid()) this.setOwner(Number(msg.pid));
+        break;
+      case 'kick':
+        if (pid === this.ownerPid() && Number(msg.pid) !== pid) this.kick(Number(msg.pid));
         break;
       case 'bot':
         if (pid === this.ownerPid()) this.changeBots(msg.team === 1 ? 1 : 0, msg.delta === 1 ? 1 : -1);

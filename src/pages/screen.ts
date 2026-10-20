@@ -1,10 +1,10 @@
 import QRCode from 'qrcode';
 import { HostGame, endReasonText, resultTitle } from '../game/host-game';
-import { Renderer, TEAM_COLOR, TEAM_NAME } from '../game/render';
+import { Renderer, TEAM_COLOR } from '../game/render';
 import { Phase, type RosterMsg, type Team } from '../game/types';
 import { t } from '../i18n';
 import { saveQrCard } from '../ui/qrcard';
-import { bindSettings, pinLineHtml, playerTag, settingsHtml } from '../ui/settings-ui';
+import { bindLobby, pinLineHtml, settingsHtml, teamCardHtml } from '../ui/settings-ui';
 import { icon } from '../ui/site';
 import { audioReady, unlockAudio } from '../ui/sound';
 import { brand, enterFullscreen, esc, joinUrl, keepAwake, randomCode, roomOpts, store } from '../ui/util';
@@ -32,17 +32,17 @@ export function mountScreen(app: HTMLElement) {
         <canvas class="qr"></canvas>
         <div class="room-code">${room}</div>
         ${pinLineHtml(opts.pin)}
-        <div class="muted">${t('screen.orOpen')}<br><span class="url">${esc(joinUrl({ room }))}</span></div>
+        <div class="muted small">${t('screen.orOpen')}<br><span class="url">${esc(joinUrl({ room }))}</span></div>
         <button class="ghost save-qr">${icon.download}${t('qr.save')}</button>
       </div>
       <div class="lobby-side">
-        <img class="lobby-logo" src="${brand('logo-dark.png')}" alt="${t('app.name')}">
-        <div class="teams">
-          <div class="team t0"><h3>${TEAM_NAME[0]}</h3><ul></ul></div>
-          <div class="team t1"><h3>${TEAM_NAME[1]}</h3><ul></ul></div>
+        <div class="lobby-head">
+          <img class="lobby-logo" src="${brand('wordmark-dark.png')}" alt="${t('app.name')}">
+          <span class="muted small">${t('play.swipeHint')}</span>
         </div>
+        <div class="tcards"></div>
         <div class="cfg-wrap"></div>
-        <div class="row">
+        <div class="row lobby-actions">
           <button class="primary start">${t('play.start')}</button>
           <button class="fs">${t('play.fullscreen')}</button>
         </div>
@@ -75,25 +75,25 @@ export function mountScreen(app: HTMLElement) {
   game.onRoster = (r) => renderUi(r);
   game.onPhase = () => renderUi(game.rosterMsg());
 
+  const sideEl = $('.lobby-side');
+  const cardsEl = $('.tcards');
+
   function renderUi(r: RosterMsg) {
-    for (const team of [0, 1] as Team[]) {
-      const ul = app.querySelector(`.team.t${team} ul`)!;
-      const list = r.players.filter((p) => p.team === team).sort((a, b) => a.num - b.num);
-      ul.innerHTML =
-        list
-          .map(
-            (p) =>
-              `<li class="${p.online ? '' : 'off'}"><b>${p.num}</b>${esc(p.name)}${p.id === r.hostPid ? `<i class="owner">${t('role.owner')}</i>` : ''}<em>${playerTag(p)}</em></li>`,
-          )
-          .join('') || `<li class="empty">${t('screen.waiting')}</li>`;
-    }
-    // 只在内容变化时重绘，避免下拉框展开时被刷新收起
-    const html = settingsHtml(r.settings, r.players);
+    // 大屏是管理端：成员都能左滑管理，队伍未满时可添加 AI，空位补满 4 个
+    const card = (team: Team) => teamCardHtml(team, r.players, { hostPid: r.hostPid, manage: true, addAi: true, slots: true, joinable: false });
+    cardsEl.innerHTML = card(0) + card(1);
+    // 设置内容变化时才重绘
+    const html = settingsHtml(r.settings);
     if (html !== cfgHtml) {
       cfgHtml = html;
       cfgEl.innerHTML = html;
-      bindSettings(cfgEl, { settings: (p) => game.setSettings(p), bot: (t, d) => game.changeBots(t, d) });
     }
+    bindLobby(sideEl, r.players, {
+      settings: (p) => game.setSettings(p),
+      addBot: (team) => game.changeBots(team, 1),
+      owner: (pid) => game.setOwner(pid),
+      kick: (pid) => game.kick(pid),
+    });
     const phase = game.sim.phase;
     lobbyEl.hidden = phase !== Phase.Lobby;
     cornerEl.hidden = phase === Phase.Lobby;

@@ -190,80 +190,6 @@ h1 {
   flex-direction: column;
   gap: 14px;
 }
-.teams {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.team h3 {
-  margin: 0 0 8px;
-  font-size: 15px;
-  padding: 6px 10px;
-  border-radius: 8px;
-}
-.team.t0 h3 {
-  background: var(--red);
-}
-.team.t1 h3 {
-  background: var(--blue);
-}
-.team ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-height: 150px;
-}
-.team li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 8px;
-  padding: 6px 8px;
-}
-.team li b {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 12px;
-  background: rgba(255, 255, 255, 0.15);
-  flex: none;
-}
-.team li em {
-  margin-left: auto;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--muted);
-}
-.team li.off {
-  opacity: 0.5;
-}
-.team li.empty {
-  color: var(--muted);
-  justify-content: center;
-}
-.settings {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.settings label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-.settings .check input {
-  width: 18px;
-  height: 18px;
-}
 .lobby .start {
   flex: 1;
   font-size: 18px;
@@ -538,12 +464,6 @@ h1 {
   max-height: calc(100% - 76px);
   overflow-y: auto;
 }
-.panel .settings {
-  justify-content: center;
-}
-.panel .settings select {
-  padding: 6px 10px;
-}
 .host-qr {
   display: flex;
   align-items: center;
@@ -580,12 +500,6 @@ h1 {
   gap: 6px;
   font-size: 13px;
   color: var(--muted);
-}
-.panel-head .close {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-  padding: 2px 10px;
 }
 .join {
   position: absolute;
@@ -634,73 +548,6 @@ h1 {
 }
 
 /* ---------- 比赛设置 / AI 增减 ---------- */
-.cfg {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-}
-.cfg select {
-  padding: 7px 10px;
-  font-size: 14px;
-}
-.cfg .check {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-}
-.cfg .check input {
-  width: 18px;
-  height: 18px;
-}
-.ai-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 8px;
-}
-.ai-step {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 10px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.05);
-  border-left: 3px solid var(--c);
-  font-size: 13px;
-  min-width: 0;
-}
-.ai-step.t0 {
-  --c: var(--red);
-}
-.ai-step.t1 {
-  --c: var(--blue);
-}
-.ai-step span {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ai-step b {
-  min-width: 14px;
-  text-align: center;
-}
-.ai-step button {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  font-size: 18px;
-  line-height: 1;
-}
-.ai-step button:disabled {
-  opacity: 0.3;
-  cursor: default;
-}
 
 .pin-line {
   font-size: 18px;
@@ -1408,7 +1255,7 @@ h1 {
 }
 .lobby-logo {
   display: block;
-  height: 48px;
+  height: 40px;
   width: auto;
   margin-bottom: 8px;
 }
@@ -1560,50 +1407,6 @@ h1 {
 }
 
 /* 手机面板：成员名单与房主标记 */
-.roster-cols {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.roster-cols ul {
-  list-style: none;
-  margin: 0;
-  padding: 2px 0 2px 8px;
-  border-left: 3px solid var(--c);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 22px;
-  font-size: 13px;
-}
-.roster-cols .t0 {
-  --c: #e5484d;
-}
-.roster-cols .t1 {
-  --c: #3e7bfa;
-}
-.roster-cols li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.roster-cols li.off {
-  opacity: 0.5;
-}
-.roster-cols .nm {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.roster-cols em {
-  margin-left: auto;
-  flex: none;
-  font-style: normal;
-  font-size: 11px;
-  color: var(--muted);
-}
 .owner {
   flex: none;
   font-style: normal;
@@ -1623,6 +1426,323 @@ h1 {
   border: 1px dashed var(--line);
   border-radius: 10px;
 }
-.cfg-summary {
+
+/* 名单行：内容放在 .row-main 里；可管理的行左滑露出右侧操作 */
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: inherit;
+}
+li.swipe {
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
+}
+.row-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  visibility: hidden;
+}
+li.open .row-actions {
+  visibility: visible;
+}
+.row-actions button {
+  width: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: 16px;
+}
+.row-actions button {
+  display: grid;
+  place-items: center;
+  color: #fff;
+}
+.row-actions .ico {
+  width: 18px;
+  height: 18px;
+}
+.row-actions .act-host {
+  background: #c99a1e;
+}
+.row-actions .act-kick {
+  background: var(--red);
+}
+.swipe-hint {
+  margin: 2px 0 0;
   text-align: center;
+}
+
+/* ---------- 房间大厅（大屏与手机面板共用） ---------- */
+.tcards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.tcard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border-top: 3px solid var(--c);
+  text-align: left;
+}
+.tcard.t0 {
+  --c: var(--red);
+}
+.tcard.t1 {
+  --c: var(--blue);
+}
+.tc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.tc-count {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.tc-join {
+  margin-left: auto;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+.tcard ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tcard li {
+  position: relative;
+  overflow: hidden;
+  min-height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+}
+.tcard li.off {
+  opacity: 0.5;
+}
+.tcard .row-main {
+  gap: 6px;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+.tcard .nm {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tcard em {
+  margin-left: auto;
+  flex: none;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+}
+.tcard .num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  font-size: 11px;
+}
+.tcard li.add-ai,
+.tcard li.slot {
+  background: none;
+}
+.add-ai button {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px;
+  border: 1px dashed rgba(143, 181, 160, 0.5);
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+.add-ai button:hover {
+  color: var(--fg);
+  border-color: var(--green);
+}
+.tcard li.slot {
+  display: grid;
+  place-items: center;
+  border: 1px dotted rgba(143, 181, 160, 0.3);
+  color: rgba(143, 181, 160, 0.6);
+  font-size: 12px;
+}
+
+/* 设置：点选按钮 + 开关 */
+.cfg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.cfg-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cfg-label {
+  flex: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.chip.on {
+  background: var(--green);
+  border-color: var(--green);
+  color: #04210f;
+  font-weight: 600;
+}
+.cfg .switch {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+}
+.cfg .switch:checked {
+  background: var(--green);
+}
+.cfg-summary {
+  margin: 8px 0;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* 手机面板：头部 / 分页 / 可滚动内容 / 底部按钮 */
+.panel {
+  top: 52px;
+  width: min(460px, calc(100% - 24px));
+  max-height: calc(100% - 60px);
+  padding: 10px 12px;
+  gap: 8px;
+  overflow: hidden;
+}
+.panel-head {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.panel-head > span {
+  flex: 1;
+  text-align: left;
+}
+.panel-head .ghost {
+  padding: 3px 10px;
+  font-size: 12px;
+}
+.ptabs {
+  display: flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.ptabs button {
+  flex: 1;
+  padding: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+}
+.ptabs button.on {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+  font-weight: 600;
+}
+.pbody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+.pfoot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pmeta {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.pmeta .panel-guide {
+  margin: 0;
+  font-size: 11px;
+}
+
+/* 大屏大厅：左二维码，右侧字标 / 两队 / 设置 / 开始 */
+.lobby {
+  grid-template-columns: auto minmax(480px, 560px);
+}
+.lobby-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lobby-head .lobby-logo {
+  height: 32px;
+  margin: 0;
+}
+.lobby-head span {
+  margin-left: auto;
+}
+.lobby .tcard li,
+.lobby .tcard .row-main {
+  min-height: 34px;
+  font-size: 14px;
+}
+.lobby .cfg {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 20px;
+}
+.lobby .cfg-row {
+  justify-content: flex-start;
 }

@@ -76,7 +76,7 @@ export interface EndInfo {
 
 /** 结束原因与拒绝原因只传代码，由各端按自己的语言显示 */
 export type EndReason = 'time' | 'host' | 'surrender';
-export type RejectReason = 'pinWrong' | 'pinNeed' | 'pinThrottle' | 'full' | 'notFound'; // notFound 由客户端超时判定
+export type RejectReason = 'pinWrong' | 'pinNeed' | 'pinThrottle' | 'full' | 'notFound' | 'kicked'; // notFound 由客户端超时判定
 
 export interface RosterMsg {
   t: 'roster';
@@ -111,4 +111,6 @@ export type ClientMsg =
   | { t: 'surrender' }
   | { t: 'settings'; patch: Partial<Settings> }
   | { t: 'bot'; team: Team; delta: 1 | -1 }
+  | { t: 'kick'; pid: number }
+  | { t: 'owner'; pid: number }
   | { t: 'ping'; ts: number };

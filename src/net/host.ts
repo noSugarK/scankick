@@ -243,6 +243,12 @@ export class HostNet {
     }
   }
 
+  /** 踢出：拒绝消息走 MQTT（DataChannel 马上要关，可能来不及送达），再断开 */
+  kick(cid: string, reason: RejectReason) {
+    this.signal.pub(`c/${cid}`, { t: 'reject', reason });
+    this.drop(cid);
+  }
+
   drop(cid: string) {
     const p = this.peers.get(cid);
     if (!p) return;

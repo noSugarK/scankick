@@ -91,7 +91,7 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 <details>
 <summary><b>Room host, surrender, and ending a match</b></summary>
 
-- **Room host**: only the host can start the match, change settings, and add or remove AI. In no-screen mode that's the hosting phone; in a big-screen room it's the first player to join (passed on if they drop), and the big screen itself can always start.
+- **Room host**: only the host can start the match, change settings, and add or remove AI. In no-screen mode that's the hosting phone; in a big-screen room it's the first player to join (passed on if they drop), and the big screen itself can always start. The host and the big screen can swipe a player left in the list to make them host (asks to confirm) or remove them (they can't rejoin that room).
 - **Surrender**: during a match tap Menu → Surrender. The team loses once a **strict majority** of its online players agree (1 of 1, 2 of 2, 2 of 3, 3 of 4); tap again to take it back.
 - **Host ends**: "End match" in the big screen's top-right corner (or Esc), or in the host phone's menu in no-screen mode. The current score decides the result.
 - **Desktop debugging**: WASD / arrows to move, J pass, K / Space shoot, L / Shift sprint, I tackle.
