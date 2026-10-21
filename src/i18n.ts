@@ -9,6 +9,10 @@ const zhCN = {
   'theme.toDark': '切换到深色',
   'lang.label': '语言',
   'footer.github': 'GitHub',
+  'dl.title': '下载应用',
+  'dl.loading': '正在获取最新版本…',
+  'dl.failed': '获取失败，请到发布页下载',
+  'dl.all': '全部版本',
 
   'tab.host': '开房',
   'status.lan': '局域网已连接',
@@ -253,6 +257,10 @@ const zhTW: Dict = {
   'theme.toDark': '切換到深色',
   'lang.label': '語言',
   'footer.github': 'GitHub',
+  'dl.title': '下載應用',
+  'dl.loading': '正在取得最新版本…',
+  'dl.failed': '取得失敗，請到發佈頁下載',
+  'dl.all': '全部版本',
 
   'tab.host': '開房',
   'status.lan': '區域網路已連線',
@@ -495,6 +503,10 @@ const en: Dict = {
   'theme.toDark': 'Switch to dark theme',
   'lang.label': 'Language',
   'footer.github': 'GitHub',
+  'dl.title': 'Download app',
+  'dl.loading': 'Finding the latest version…',
+  'dl.failed': 'Could not load, open the releases page',
+  'dl.all': 'All releases',
 
   'tab.host': 'Host',
   'status.lan': 'LAN connected',

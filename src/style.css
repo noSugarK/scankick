@@ -735,6 +735,57 @@ h1 {
 .site .site-hero .icon-btn {
   color: var(--s-herofg);
 }
+/* 网页版下载菜单：原生 details 展开，内容首次打开时从 GitHub 拉取；弹层对齐整组工具的右边，窄屏不贴左边 */
+.site-tools {
+  position: relative;
+}
+.dl-menu summary {
+  list-style: none;
+  cursor: pointer;
+}
+.dl-menu summary::-webkit-details-marker {
+  display: none;
+}
+.dl-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--s-line);
+  border-radius: 12px;
+  background: var(--s-card);
+  color: var(--s-fg);
+  box-shadow: 0 12px 32px rgba(10, 40, 20, 0.18);
+}
+.dl-pop a {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 14px;
+}
+.dl-pop a:hover {
+  background: var(--s-tab);
+}
+.dl-pop small,
+.dl-msg {
+  color: var(--s-mu);
+  font-size: 12px;
+}
+.dl-msg {
+  margin: 4px 10px 6px;
+}
+.dl-pop .dl-all {
+  margin-top: 4px;
+  border-top: 1px solid var(--s-line);
+  border-radius: 0 0 8px 8px;
+  color: var(--s-ac);
+}
 .lang-select {
   padding: 6px 10px;
   border-radius: 999px;

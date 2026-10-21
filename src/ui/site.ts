@@ -1,6 +1,7 @@
 // 首页与教程页共用：主题、语言切换、页脚、图标
 import { LANGS, lang, setLang, t } from '../i18n';
 import { store } from './util';
+import { isLanPage, isNativeApp } from '../net/lan-session';
 
 const svg = (body: string) =>
   `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
@@ -41,7 +42,12 @@ export function applyTheme() {
 /** 右上角：主题切换 + 语言下拉 */
 export function siteTools() {
   const dark = theme() === 'dark';
+  const download = isNativeApp() || isLanPage() ? '' : `<details class="dl-menu">
+      <summary class="icon-btn" aria-label="${t('dl.title')}" title="${t('dl.title')}">${icon.download}</summary>
+      <div class="dl-pop"><p class="dl-msg">${t('dl.loading')}</p><a class="dl-all" href="${REPO_URL}/releases" target="_blank" rel="noopener">${t('dl.all')}</a></div>
+    </details>`;
   return `<div class="site-tools">
+    ${download}
     <button class="icon-btn theme-btn" aria-label="${t(dark ? 'theme.toLight' : 'theme.toDark')}" title="${t(dark ? 'theme.toLight' : 'theme.toDark')}">${dark ? icon.sun : icon.moon}</button>
     <select class="lang-select" aria-label="${t('lang.label')}">${LANGS.map(
       ([v, name]) => `<option value="${v}" ${v === lang ? 'selected' : ''}>${name}</option>`,
@@ -60,8 +66,40 @@ export function bindSiteTools(root: HTMLElement) {
     btn.setAttribute('aria-label', label);
     btn.title = label;
   };
+  const menu = root.querySelector<HTMLDetailsElement>('.dl-menu');
+  if (menu) {
+    menu.addEventListener('toggle', () => menu.open && void loadDownloads(menu), { once: true });
+    document.addEventListener('click', (e) => !menu.contains(e.target as Node) && (menu.open = false));
+  }
   const sel = root.querySelector<HTMLSelectElement>('.lang-select')!;
   sel.onchange = () => setLang(sel.value as (typeof LANGS)[number][0]);
+}
+
+// 安装包名形如 ScanKick_<版本>_<平台>.<扩展名>，见 release-app.yml
+const PLATFORMS: [RegExp, string][] = [
+  [/windows.*\.exe$/, 'Windows'],
+  [/windows.*\.msi$/, 'Windows (MSI)'],
+  [/macos.*\.dmg$/, 'macOS'],
+  [/linux.*\.deb$/, 'Linux (deb)'],
+  [/linux.*\.rpm$/, 'Linux (rpm)'],
+  [/android.*\.apk$/, 'Android'],
+];
+
+/** 预发布不算 GitHub 的 latest，直接取最新一个发布 */
+async function loadDownloads(menu: HTMLElement) {
+  const msg = menu.querySelector('.dl-msg')!;
+  try {
+    const res = await fetch('https://api.github.com/repos/noSugarK/scankick/releases?per_page=1');
+    const [release] = (await res.json()) as { tag_name: string; assets: { name: string; browser_download_url: string; size: number }[] }[];
+    const links = PLATFORMS.flatMap(([re, label]) => {
+      const asset = release.assets.find((a) => re.test(a.name));
+      return asset ? [`<a href="${asset.browser_download_url}"><span>${label}</span><small>${(asset.size / 1048576).toFixed(1)} MB</small></a>`] : [];
+    });
+    if (!links.length) throw new Error('no assets');
+    msg.outerHTML = `<p class="dl-msg">${release.tag_name}</p>${links.join('')}`;
+  } catch {
+    msg.textContent = t('dl.failed');
+  }
 }
 
 export function siteFooter() {
