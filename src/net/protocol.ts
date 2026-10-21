@@ -1,4 +1,4 @@
-import type { Input, Phase, Snapshot, SnapPlayer } from '../game/types';
+import { MATCH_MODES, PARTY_RULES, type Input, type Phase, type Snapshot, type SnapPlayer, type MatchMode, type PartyRule } from '../game/types';
 
 export const MSG_INPUT = 1;
 export const MSG_SNAP = 2;
@@ -29,7 +29,7 @@ export function newerInput(seq: number, prev: number | undefined): boolean {
 }
 
 // 位置 x10 精度 0.1，速度单位 u/s 取整
-const HEAD = 19;
+const HEAD = 20;
 const PER = 13;
 const clamp16 = (v: number) => Math.max(-32768, Math.min(32767, Math.round(v)));
 const u8 = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
@@ -49,6 +49,7 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
   dv.setInt16(14, clamp16(s.ball.vx), true);
   dv.setInt16(16, clamp16(s.ball.vy), true);
   b[18] = s.players.length;
+  b[19] = s.mode | (s.golden ? 4 : 0) | (s.party << 3);
   let o = HEAD;
   for (const p of s.players) {
     b[o] = p.id;
@@ -67,6 +68,9 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
 
 export function decodeSnapshot(b: Uint8Array): Snapshot | null {
   if (b.length < HEAD || b[0] !== MSG_SNAP) return null;
+  const mode = (b[19] & 3) as MatchMode;
+  const party = (b[19] >> 3) as PartyRule;
+  if (!MATCH_MODES.includes(mode) || !PARTY_RULES.includes(party)) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   const n = b[18];
   if (b.length < HEAD + n * PER) return null;
@@ -87,6 +91,9 @@ export function decodeSnapshot(b: Uint8Array): Snapshot | null {
     o += PER;
   }
   return {
+    mode,
+    golden: !!(b[19] & 4),
+    party,
     phase: b[1] as Phase,
     tick: dv.getUint16(2, true),
     score: [b[4], b[5]],

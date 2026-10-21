@@ -1616,6 +1616,10 @@ li.open .row-actions {
   justify-content: space-between;
   gap: 10px;
 }
+.cfg > .cfg-hint {
+  margin: -4px 0 0;
+  line-height: 1.5;
+}
 .cfg-label {
   flex: none;
   color: var(--muted);
@@ -1756,6 +1760,9 @@ li.open .row-actions {
 }
 .lobby .cfg-row {
   justify-content: flex-start;
+}
+.lobby .cfg > .cfg-hint {
+  flex-basis: 100%;
 }
 
 /* 观战：没有手柄 */

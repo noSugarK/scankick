@@ -11,12 +11,16 @@ import { Sim } from './sim';
 import {
   BOT_LEVELS,
   DURATIONS,
+  MATCH_MODES,
+  PARTY_RULES,
   Phase,
   type BotLevel,
   type EndInfo,
   type EndReason,
   type HostMsg,
   type Input,
+  type MatchMode,
+  type PartyRule,
   type PlayerInfo,
   type PlayerStat,
   type RejectReason,
@@ -54,7 +58,7 @@ export const statScore = (p: PlayerStat) => p.g * 3 + p.a * 2 + p.t + p.s * 0.5;
 export class HostGame {
   readonly sim = new Sim();
   readonly net: HostNet;
-  readonly settings: Settings = { duration: 180, autoFill: true, bots: [0, 0], level: 1 };
+  readonly settings: Settings = { mode: 0, party: 0, duration: 180, autoFill: true, bots: [0, 0], level: 1 };
   goalText = '';
   endInfo: EndInfo | null = null;
   /** 本房间最近的比赛，新的在前 */
@@ -517,6 +521,11 @@ export class HostGame {
   setSettings(p: Partial<Settings>) {
     if (this.inMatch()) return;
     const st = this.settings;
+    if (MATCH_MODES.includes(p.mode as MatchMode)) st.mode = p.mode as MatchMode;
+    if (PARTY_RULES.includes(p.party as PartyRule)) {
+      st.party = p.party as PartyRule;
+      this.sim.party = st.party;
+    }
     if (p.duration !== undefined && DURATIONS.includes(Number(p.duration))) st.duration = Number(p.duration);
     const level = Number(p.level) as BotLevel;
     if (p.level !== undefined && BOT_LEVELS.includes(level)) st.level = level;
@@ -552,7 +561,7 @@ export class HostGame {
     this.rebalanceBots();
     this.stats.clear();
     for (const id of this.slots.keys()) this.stat(id);
-    this.sim.startMatch(this.settings.duration);
+    this.sim.startMatch(this.settings.duration, this.settings.mode, this.settings.party);
     this.rosterChanged();
   }
 
@@ -660,7 +669,7 @@ export class HostGame {
         }
         case 'end': {
           sfxWhistle(true);
-          const p = this.pendingEnd ?? { reason: 'time' as const, winner: this.scoreWinner() };
+          const p = this.pendingEnd ?? { reason: sim.endReason, winner: this.scoreWinner() };
           this.pendingEnd = null;
           this.endInfo = { score: [sim.score[0], sim.score[1]], ...p, at: Date.now(), ...this.finalStats() };
           this.history.unshift(this.endInfo);

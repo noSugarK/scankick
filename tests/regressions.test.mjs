@@ -26,8 +26,8 @@ registerHooks({
 });
 
 const { Sim, F } = await import('../src/game/sim.ts');
-const { Phase, BTN_A, BTN_B, BTN_Y } = await import('../src/game/types.ts');
-const { encodeInput, decodeInput, newerInput } = await import('../src/net/protocol.ts');
+const { Phase, BTN_A, BTN_B, BTN_X, BTN_Y } = await import('../src/game/types.ts');
+const { encodeInput, decodeInput, newerInput, encodeSnapshot, decodeSnapshot } = await import('../src/net/protocol.ts');
 const { ClientNet } = await import('../src/net/client.ts');
 const { HostGame } = await import('../src/game/host-game.ts');
 const { Gamepad } = await import('../src/ui/gamepad.ts');
@@ -194,4 +194,202 @@ test('准备阶段不会把排队的短按带进开球，异常输入队列有�
   sim.phase = Phase.Playing;
   sim.step(dt);
   assert.equal(p.passBuf, 0);
+});
+
+function scoreGoal(sim, side = 1) {
+  Object.assign(sim.ball, { x: side * (F.HL - 5), y: 0, vx: side * 1060, vy: 0 });
+  sim.step(dt);
+  assert.equal(sim.phase, Phase.Goal);
+  sim.step(3);
+}
+
+test('抢三球不限时，前两球继续，第三球庆祝后结算且只结算一次', () => {
+  const sim = match();
+  sim.mode = 1;
+  sim.timeLeft = 0;
+  sim.step(dt);
+  assert.equal(sim.phase, Phase.Playing);
+  for (let i = 1; i <= 3; i++) {
+    scoreGoal(sim);
+    assert.equal(sim.score[0], i);
+    assert.equal(sim.phase, i === 3 ? Phase.Ended : Phase.Ready);
+    if (i < 3) sim.step(1.5);
+  }
+  sim.step(dt);
+  assert.equal(sim.endReason, 'target');
+  assert.equal(sim.events.filter((event) => event.k === 'end').length, 1);
+});
+
+test('金球制平分进入加时、保留比分，下一球决胜；再开一局会重置', () => {
+  const sim = match();
+  sim.mode = 2;
+  sim.score = [1, 1];
+  sim.timeLeft = dt / 2;
+  sim.step(dt);
+  assert.equal(sim.golden, true);
+  assert.equal(sim.phase, Phase.Ready);
+  assert.deepEqual(sim.score, [1, 1]);
+  sim.step(1.5);
+  sim.step(dt);
+  assert.equal(sim.phase, Phase.Playing);
+  scoreGoal(sim, -1);
+  assert.equal(sim.phase, Phase.Ended);
+  assert.equal(sim.endReason, 'golden');
+  assert.deepEqual(sim.score, [1, 2]);
+  sim.startMatch(60, 0);
+  assert.equal(sim.golden, false);
+  assert.equal(sim.endReason, 'time');
+  assert.deepEqual(sim.score, [0, 0]);
+});
+
+test('经典赛允许平局；金球制到时领先直接胜出，压哨追平仍进入金球', () => {
+  for (const mode of [0, 2]) {
+    const sim = match();
+    sim.mode = mode;
+    sim.score = mode === 2 ? [1, 0] : [0, 0];
+    sim.timeLeft = dt / 2;
+    sim.step(dt);
+    assert.equal(sim.phase, Phase.Ended);
+    assert.equal(sim.golden, false);
+  }
+  const tied = match();
+  tied.mode = 2;
+  tied.score = [0, 1];
+  tied.timeLeft = dt / 2;
+  scoreGoal(tied);
+  assert.equal(tied.golden, true);
+  assert.equal(tied.phase, Phase.Ready);
+  assert.deepEqual(tied.score, [1, 1]);
+});
+
+test('模式设置仅接受有效值、比赛中不可更改，快照传输金球状态', () => {
+  const host = new HostGame('MODE');
+  host.setSettings({ mode: 1 });
+  host.setSettings({ mode: 99 });
+  assert.equal(host.settings.mode, 1);
+  host.startMatch();
+  host.setSettings({ mode: 0 });
+  assert.equal(host.sim.mode, 1);
+  assert.equal(host.settings.mode, 1);
+  const sim = match();
+  sim.mode = 2;
+  sim.golden = true;
+  const decoded = decodeSnapshot(encodeSnapshot(sim.snapshot()));
+  assert.equal(decoded.mode, 2);
+  assert.equal(decoded.golden, true);
+});
+
+test('巨型足球的碰撞、出脚距离和整球过线判定使用相同半径', () => {
+  const sim = match();
+  sim.party = 1;
+  assert.equal(sim.ballRadius, 20);
+  const p = sim.addPlayer(1, 0);
+  Object.assign(p, { x: -40, y: 0, angle: 0 });
+  sim.setInput(1, { jx: 0, jy: 0, btn: BTN_A });
+  sim.step(dt);
+  assert.ok(sim.events.some((event) => event.k === 'kick'));
+  const collision = match();
+  collision.party = 1;
+  const player = collision.addPlayer(1, 0);
+  Object.assign(player, { x: -30, y: 0 });
+  collision.step(dt);
+  assert.ok(Math.hypot(collision.ball.x - player.x, collision.ball.y - player.y) >= F.PR + 20 - 0.001);
+  for (const side of [-1, 1]) {
+    const goal = match();
+    goal.party = 1;
+    Object.assign(goal.ball, { x: side * (F.HL + 15), y: 0, vx: 0, vy: 0 });
+    goal.step(dt);
+    assert.deepEqual(goal.score, [0, 0]);
+    goal.ball.vx = side * 1060;
+    goal.step(dt);
+    assert.equal(goal.score[0] + goal.score[1], 1);
+    const wide = match();
+    wide.party = 1;
+    Object.assign(wide.ball, { x: side * (F.HL - 5), y: 200, vx: side * 1060, vy: 0 });
+    wide.step(dt);
+    assert.deepEqual(wide.score, [0, 0]);
+  }
+});
+
+test('无限体力可持续冲刺，切回标准后正常消耗体力且球恢复原尺寸', () => {
+  const sim = match();
+  sim.party = 2;
+  const p = sim.addPlayer(1, 0);
+  p.stamina = 0;
+  p.exhausted = true;
+  sim.setInput(1, { jx: 1, jy: 0, btn: BTN_X });
+  for (let i = 0; i < 600; i++) sim.step(dt);
+  assert.equal(p.stamina, 1);
+  assert.equal(p.exhausted, false);
+  sim.startMatch(60, 1, 0);
+  assert.equal(sim.party, 0);
+  assert.equal(sim.ballRadius, 10);
+  sim.step(1.5);
+  sim.step(dt);
+  assert.ok(p.stamina < 1);
+});
+
+test('强反弹提高边线、底线和门柱反弹速度，不增幅球速', () => {
+  for (const kind of ['sideline', 'endline', 'post']) {
+    const speeds = [];
+    for (const party of [0, 3]) {
+      const sim = match();
+      sim.party = party;
+      Object.assign(sim.ball, kind === 'sideline'
+        ? { x: 0, y: F.HW - 11, vx: 0, vy: 500 }
+        : { x: F.HL - 20, y: kind === 'post' ? F.GW : 200, vx: 500, vy: 0 });
+      for (let i = 0; i < 5; i++) sim.step(dt);
+      const speed = Math.hypot(sim.ball.vx, sim.ball.vy);
+      assert.ok(speed <= 500);
+      if (kind === 'sideline') assert.ok(sim.ball.vy < 0);
+      else assert.ok(sim.ball.vx < 0);
+      assert.deepEqual(sim.score, [0, 0]);
+      speeds.push(speed);
+    }
+    assert.ok(speeds[1] > speeds[0]);
+  }
+});
+
+test('所有模式与派对组合均可传输，畸形快照被拒绝；规则开赛后锁定', () => {
+  for (const mode of [0, 1, 2]) for (const party of [0, 1, 2, 3]) {
+    const sim = match();
+    sim.mode = mode;
+    sim.party = party;
+    sim.golden = mode === 2;
+    const packet = encodeSnapshot(sim.snapshot());
+    const decoded = decodeSnapshot(packet);
+    assert.equal(decoded.mode, mode);
+    assert.equal(decoded.party, party);
+    assert.equal(decoded.golden, mode === 2);
+    packet[19] = 255;
+    assert.equal(decodeSnapshot(packet), null);
+  }
+  const host = new HostGame('PARTY');
+  host.setSettings({ party: 1, mode: 1 });
+  host.setSettings({ party: '2' });
+  assert.equal(host.settings.party, 1);
+  host.startMatch();
+  host.setSettings({ party: 3 });
+  assert.equal(host.sim.party, 1);
+  assert.equal(host.settings.party, 1);
+  host.endMatch();
+  host.handleEvents();
+  assert.equal(host.endInfo.reason, 'host');
+});
+
+test('金球获胜原因和比分进入主机结算、名单与历史记录', () => {
+  const host = new HostGame('RESULT');
+  host.setSettings({ mode: 2 });
+  host.startMatch();
+  host.sim.step(1.5);
+  host.sim.timeLeft = 0;
+  host.sim.step(dt);
+  host.sim.step(1.5);
+  scoreGoal(host.sim);
+  host.handleEvents();
+  assert.equal(host.endInfo.reason, 'golden');
+  assert.equal(host.endInfo.winner, 0);
+  assert.deepEqual(host.endInfo.score, [1, 0]);
+  assert.equal(host.rosterMsg().end, host.endInfo);
+  assert.equal(host.history[0], host.endInfo);
 });

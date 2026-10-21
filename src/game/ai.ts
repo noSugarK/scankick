@@ -88,8 +88,8 @@ function decide(sim: Sim, p: SimPlayer, dt: number, tuning: (typeof LEVELS)[numb
   // 抢球：跑到球的“射门方向后方”再推进
   const goalY = Math.max(-F.GW * 0.6, Math.min(F.GW * 0.6, b.y * 0.3));
   const [ax, ay] = aimAt(b.x, b.y, attackX, goalY);
-  const behindX = b.x - ax * (F.PR + F.BR + 2);
-  const behindY = b.y - ay * (F.PR + F.BR + 2);
+  const behindX = b.x - ax * (F.PR + sim.ballRadius + 2);
+  const behindY = b.y - ay * (F.PR + sim.ballRadius + 2);
   const ahead = (p.x - b.x) * ax + (p.y - b.y) * ay; // >0 表示人在球前面
   let btn = 0;
 
@@ -98,7 +98,7 @@ function decide(sim: Sim, p: SimPlayer, dt: number, tuning: (typeof LEVELS)[numb
     if (q.team === p.team) continue;
     const qd = Math.hypot(q.x - b.x, q.y - b.y);
     const pq = Math.hypot(q.x - p.x, q.y - p.y);
-    if (qd < F.PR + F.BR + 6 && pq < 55 && p.tackleCd <= 0 && Math.random() < tuning.tackle) btn |= BTN_Y;
+    if (qd < F.PR + sim.ballRadius + 6 && pq < 55 && p.tackleCd <= 0 && Math.random() < tuning.tackle) btn |= BTN_Y;
   }
 
   if (ahead > -4) {

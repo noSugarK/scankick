@@ -9,6 +9,9 @@ import {
   FLAG_TACKLE,
   Phase,
   type Input,
+  type MatchMode,
+  type PartyRule,
+  type EndReason,
   type Snapshot,
   type Team,
 } from './types';
@@ -32,7 +35,7 @@ const WALK = 205;
 const SPRINT_MUL = 1.45;
 const ACCEL = 10; // 速度趋近目标的速率（越大越跟手）
 const BALL_DAMP = 0.55; // 球每秒保留的速度比例
-const KICK_REACH = F.PR + F.BR + 9;
+export const ballRadius = (party: PartyRule) => party === 1 ? F.BR * 2 : F.BR;
 const SHOT_MIN = 430;
 const SHOT_MAX = 1060;
 const CHARGE_TIME = 0.85;
@@ -89,6 +92,11 @@ export function homeSpot(team: Team, slot: number, count: number): [number, numb
 }
 
 export class Sim {
+  mode: MatchMode = 0;
+  party: PartyRule = 0;
+  get ballRadius() { return ballRadius(this.party); }
+  golden = false;
+  endReason: EndReason = 'time';
   tick = 0;
   phase: Phase = Phase.Lobby;
   phaseTime = 0;
@@ -174,10 +182,18 @@ export class Sim {
     }
   }
 
-  startMatch(duration: number) {
+  startMatch(duration: number, mode: MatchMode = 0, party: PartyRule = 0) {
+    this.mode = mode;
+    this.party = party;
+    this.golden = false;
+    this.endReason = 'time';
     this.duration = duration;
     this.timeLeft = duration;
     this.score = [0, 0];
+    for (const p of this.players.values()) {
+      p.stamina = 1;
+      p.exhausted = false;
+    }
     this.kickoffTeam = Math.random() < 0.5 ? 0 : 1;
     this.resetForKickoff();
   }
@@ -191,6 +207,7 @@ export class Sim {
   }
 
   toLobby() {
+    this.golden = false;
     this.phase = Phase.Lobby;
     this.phaseTime = 0;
     this.kickoffPending = false;
@@ -213,7 +230,7 @@ export class Sim {
         let [x, y] = homeSpot(team, i, list.length);
         // 开球方的最后一名（前锋）站在球旁边
         if (team === this.kickoffTeam && i === list.length - 1) {
-          x = team === 0 ? -(F.PR + F.BR + 4) : F.PR + F.BR + 4;
+          x = (team === 0 ? -1 : 1) * (F.PR + this.ballRadius + 4);
           y = 0;
         }
         Object.assign(p, { x, y, vx: 0, vy: 0, angle: team === 0 ? 0 : Math.PI, charge: -1, tackleT: 0, stunT: 0 });
@@ -234,7 +251,7 @@ export class Sim {
         p.y += p.vy * dt;
       }
       const b = this.ball;
-      const damp = Math.pow(BALL_DAMP, dt);
+      const damp = Math.pow(this.party === 3 ? 0.85 : BALL_DAMP, dt);
       b.vx *= damp;
       b.vy *= damp;
 
@@ -242,7 +259,7 @@ export class Sim {
       // 每次最多移动半个球半径，避免高速球穿过门柱或底线。
       let remaining = dt;
       while (remaining > 0) {
-        const part = Math.min(remaining, F.BR / 2 / Math.max(1, Math.hypot(b.vx, b.vy)));
+        const part = Math.min(remaining, this.ballRadius / 2 / Math.max(1, Math.hypot(b.vx, b.vy)));
         const prevX = b.x;
         const prevY = b.y;
         b.x += b.vx * part;
@@ -260,6 +277,10 @@ export class Sim {
   }
 
   private updatePlayer(p: SimPlayer, dt: number, frozen: boolean) {
+    if (this.party === 2) {
+      p.stamina = 1;
+      p.exhausted = false;
+    }
     const inp = frozen ? NO_INPUT : (p.inputQueue.shift() ?? p.input);
     if (frozen) p.inputQueue.length = 0;
     const pressed = inp.btn & ~p.prevBtn;
@@ -321,7 +342,7 @@ export class Sim {
     if (p.stamina <= 0.02) p.exhausted = true;
     if (p.exhausted && p.stamina > 0.3) p.exhausted = false;
     const sprint = !!(inp.btn & BTN_X) && !p.exhausted && mag > 0.2 && !charging;
-    if (sprint) p.stamina = Math.max(0, p.stamina - 0.4 * dt);
+    if (sprint && this.party !== 2) p.stamina = Math.max(0, p.stamina - 0.4 * dt);
     else p.stamina = Math.min(1, p.stamina + 0.22 * dt);
 
     let max = WALK * (sprint ? SPRINT_MUL : 1) * (charging ? 0.7 : 1);
@@ -377,7 +398,7 @@ export class Sim {
     let dx = b.x - p.x;
     let dy = b.y - p.y;
     const d = Math.hypot(dx, dy);
-    const minD = F.PR + F.BR;
+    const minD = F.PR + this.ballRadius;
     if (d >= minD) return;
     if (d === 0) {
       dx = Math.cos(p.angle);
@@ -424,7 +445,7 @@ export class Sim {
     const dx = b.x - p.x;
     const dy = b.y - p.y;
     const d = Math.hypot(dx, dy);
-    if (d > KICK_REACH) return;
+    if (d > F.PR + this.ballRadius + 9) return;
     const fx = Math.cos(p.angle);
     const fy = Math.sin(p.angle);
     let dirX: number;
@@ -493,14 +514,15 @@ export class Sim {
     ];
     const b = this.ball;
     for (const [px, py] of posts) {
-      circleStatic(b, F.BR, px, py, F.POST_R, 0.6);
+      circleStatic(b, this.ballRadius, px, py, F.POST_R, this.party === 3 ? 0.95 : 0.6);
       for (const p of this.players.values()) circleStatic(p, F.PR, px, py, F.POST_R, 0.2);
     }
   }
 
   private constrainBall(prevX: number, prevY: number) {
     const b = this.ball;
-    const r = F.BR;
+    const r = this.ballRadius;
+    const bounce = this.party === 3 ? 0.95 : 0.7;
     // 先检查进入球门的轨迹，再约束球网内部；不能把底线外的球夹进门。
     if (Math.abs(prevX) <= F.HL && Math.abs(b.x) > F.HL - r) {
       const wallX = Math.sign(b.x) * (F.HL - r);
@@ -508,7 +530,7 @@ export class Sim {
       const entryY = prevY + (b.y - prevY) * k;
       if (Math.abs(entryY) > F.GW - r) {
         b.x = wallX;
-        if (b.vx * Math.sign(wallX) > 0) b.vx *= -0.7;
+        if (b.vx * Math.sign(wallX) > 0) b.vx *= -bounce;
       }
     }
     const inGoal = Math.abs(b.x) > F.HL;
@@ -528,11 +550,11 @@ export class Sim {
     } else {
       if (Math.abs(b.y) > F.HW - r) {
         b.y = Math.sign(b.y) * (F.HW - r);
-        b.vy *= -0.7;
+        b.vy *= -bounce;
       }
       if (Math.abs(b.x) > F.HL - r && Math.abs(b.y) > F.GW) {
         b.x = Math.sign(b.x) * (F.HL - r);
-        b.vx *= -0.7;
+        b.vx *= -bounce;
       }
     }
   }
@@ -581,7 +603,7 @@ export class Sim {
 
   private updatePhase(dt: number) {
     const b = this.ball;
-    const crossed = Math.abs(b.x) > F.HL + F.BR && Math.abs(b.y) <= F.GW - F.BR;
+    const crossed = Math.abs(b.x) > F.HL + this.ballRadius && Math.abs(b.y) <= F.GW - this.ballRadius;
     switch (this.phase) {
       case Phase.Lobby:
         // 大厅热身：进球不计分，球回到中圈
@@ -597,32 +619,35 @@ export class Sim {
       case Phase.Playing:
         // 开球方 5 秒内没人触球（掉线或挂机），解除开球站位限制，避免卡死
         if (this.kickoffPending && this.phaseTime > 5) this.kickoffPending = false;
-        this.timeLeft = Math.max(0, this.timeLeft - dt);
+        if (this.mode !== 1 && !this.golden) this.timeLeft = Math.max(0, this.timeLeft - dt);
         if (crossed) {
           const team: Team = b.x > 0 ? 0 : 1;
           this.score[team]++;
+          if (this.mode === 1 && this.score[team] >= 3) this.endReason = 'target';
+          if (this.golden) this.endReason = 'golden';
           const own = b.lastTeam !== -1 && b.lastTeam !== team;
           const assist = !own && b.prevTeam === team ? b.prevTouch : -1;
           this.events.push({ k: 'goal', team, scorer: b.lastTouch, own, assist });
           this.kickoffTeam = team === 0 ? 1 : 0;
           this.phase = Phase.Goal;
           this.phaseTime = 0;
-        } else if (this.timeLeft <= 0) {
-          this.phase = Phase.Ended;
-          this.phaseTime = 0;
-          this.events.push({ k: 'end' });
-        }
+        } else if (this.mode !== 1 && !this.golden && this.timeLeft <= 0) this.finishOrOvertime();
         break;
       case Phase.Goal:
         if (this.phaseTime >= 3) {
-          if (this.timeLeft <= 0) {
-            this.phase = Phase.Ended;
-            this.phaseTime = 0;
-            this.events.push({ k: 'end' });
-          } else this.resetForKickoff();
+          if (this.endReason === 'target' || this.endReason === 'golden') this.forceEnd();
+          else if (this.mode !== 1 && this.timeLeft <= 0) this.finishOrOvertime();
+          else this.resetForKickoff();
         }
         break;
     }
+  }
+
+  private finishOrOvertime() {
+    if (this.mode === 2 && this.score[0] === this.score[1]) {
+      this.golden = true;
+      this.resetForKickoff();
+    } else this.forceEnd();
   }
 
   snapshot(): Snapshot {
@@ -642,6 +667,9 @@ export class Sim {
       charge: Math.max(0, p.charge),
     }));
     return {
+      mode: this.mode,
+      golden: this.golden,
+      party: this.party,
       tick: this.tick,
       phase: this.phase,
       score: [this.score[0], this.score[1]],

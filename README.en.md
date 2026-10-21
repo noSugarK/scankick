@@ -88,6 +88,18 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 | **X** | Sprint | Hold to run faster, uses stamina |
 | **Y** | Tackle | Slide forward; a hit knocks the opponent down briefly, with cooldown |
 
+## Match modes and party rules
+
+The host can choose these settings before kickoff. They stay fixed during the match.
+
+| Mode | Win condition |
+|---|---|
+| Timed | Highest score wins at full time; tied scores are a draw |
+| First to 3 | No time limit; the first team to score 3 goals wins |
+| Golden goal | If tied at full time, retain the score and kick off again; the next goal wins |
+
+Each match can also use one party rule: **Giant ball** (double diameter, with matching collision and kick reach), **Endless stamina** (sprinting never drains stamina), or **Super bounce** (less drag and stronger rebounds off boundaries and posts). Choose **None** for standard rules. The active rule appears on the match screen.
+
 <details>
 <summary><b>Room host, surrender, and ending a match</b></summary>
 
@@ -111,7 +123,7 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 
 #### How it works
 
-- **Host** (the big screen, or the hosting phone; see `src/game/host-game.ts`): runs 60 Hz physics and match logic and broadcasts binary state snapshots to every phone at 30 Hz, about 115 bytes per frame for 8 players.
+- **Host** (the big screen, or the hosting phone; see `src/game/host-game.ts`): runs 60 Hz physics and match logic and broadcasts binary state snapshots to every phone at 30 Hz, 124 bytes per frame for 8 players.
 - **Phones**: send input at 30 Hz, interpolate snapshots, and predict their own player locally.
 - **Connectivity**: WebRTC signaling goes over public MQTT (EMQX, reachable from mainland China) to set up a P2P DataChannel. If a direct link fails it falls back to an MQTT relay and retries a direct link every 15 seconds. The public lobby uses MQTT retained messages; see `src/net/lobby.ts`.
 
@@ -125,7 +137,7 @@ npm test           # Physics and input regression tests (Node.js 22.15+ or 24 LT
 
 When the big screen is opened on `localhost`, the QR code switches to your LAN IP automatically. Append `?relay` to a phone URL (for example `#/join/ABCDE?relay`) to force the relay.
 
-Input protocol v2 uses 32-bit sequence numbers to reject stale and duplicate packets. Button changes are sent immediately over the reliable ordered channel, or MQTT QoS 1 when relaying; the host processes press/release transitions on separate simulation ticks. Snapshots keep their existing low-latency transport. v2 rooms are isolated from older pages: after updating, refresh both the host and phones, then create and join a new room.
+Inputs use 32-bit sequence numbers to reject stale and duplicate packets. Button changes are sent immediately over the reliable ordered channel, or MQTT QoS 1 when relaying; the host processes press/release transitions on separate simulation ticks. Snapshots keep their existing low-latency transport. Protocol v3 adds match mode, golden-goal status, and party rule to snapshots. Rooms are isolated from older pages: after updating, refresh both the host and phones, then create and join a new room.
 
 #### Deploy to GitHub Pages
 

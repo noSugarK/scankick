@@ -360,7 +360,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     } else if (!inMatch) {
       // 主按钮和次要按钮放一行，省出高度给名单 / 设置 / 战绩
       html += '<div class="pfoot-row">';
-      if (isOwner) html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${t('play.minutes', { n: st.duration / 60 })}</button>`;
+      if (isOwner) html += `<button class="primary start">${t(ended ? 'play.again' : 'play.start')} · ${st.mode === 1 ? t('mode.1') : t('play.minutes', { n: st.duration / 60 })}</button>`;
       else html += `<p class="wait-owner">${t('play.waitOwner', { name: esc(players.find((p) => p.id === r.hostPid)?.name ?? '') })}</p>`;
       if (isHost && ended) html += `<button class="back">${t('play.toLobby')}</button>`;
       if (!isHost && me) html += `<button class="ghost to-watch">${t('play.toWatch')}</button>`;
@@ -519,7 +519,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     if (!pred.ok || frozen) {
       Object.assign(pred, { x: frozen ? view.players[i].x : sx, y: frozen ? view.players[i].y : sy, vx: server.vx, vy: server.vy, ok: true });
     } else {
-      predictMove(pred, pad.input, dt, !!(pad.input.btn & BTN_B), server.stamina > 0.05);
+      predictMove(pred, pad.input, dt, !!(pad.input.btn & BTN_B), view.party === 2 || server.stamina > 0.05);
       pred.x += pred.vx * dt;
       pred.y += pred.vy * dt;
       const ex = sx - pred.x;

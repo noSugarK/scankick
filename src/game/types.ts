@@ -14,6 +14,14 @@ export const FLAG_CHARGE = 8;
 
 export type Team = 0 | 1; // 0 红队（左侧，向右进攻） 1 蓝队（右侧）
 
+/** 0 经典计时，1 抢三球（不限时），2 计时 + 平局金球决胜 */
+export const MATCH_MODES = [0, 1, 2] as const;
+export type MatchMode = (typeof MATCH_MODES)[number];
+
+/** 每局最多启用一种派对规则：0 无，1 巨型足球，2 无限体力，3 强反弹 */
+export const PARTY_RULES = [0, 1, 2, 3] as const;
+export type PartyRule = (typeof PARTY_RULES)[number];
+
 export interface Input {
   jx: number; // -1..1
   jy: number;
@@ -43,6 +51,9 @@ export interface SnapPlayer {
 }
 
 export interface Snapshot {
+  mode: MatchMode;
+  golden: boolean;
+  party: PartyRule;
   tick: number;
   phase: Phase;
   score: [number, number];
@@ -60,6 +71,8 @@ export const BOT_LEVELS = [0, 1, 2] as const;
 export type BotLevel = (typeof BOT_LEVELS)[number];
 
 export interface Settings {
+  mode: MatchMode;
+  party: PartyRule;
   duration: number; // 秒
   /** 自动补位：AI 把人少的一队补到与人多的一队相同 */
   autoFill: boolean;
@@ -92,7 +105,7 @@ export interface EndInfo {
 }
 
 /** 结束原因与拒绝原因只传代码，由各端按自己的语言显示 */
-export type EndReason = 'time' | 'host' | 'surrender';
+export type EndReason = 'time' | 'host' | 'surrender' | 'target' | 'golden';
 export type RejectReason = 'pinWrong' | 'pinNeed' | 'pinThrottle' | 'full' | 'watchFull' | 'notFound' | 'kicked'; // notFound 由客户端超时判定
 
 export interface RosterMsg {
