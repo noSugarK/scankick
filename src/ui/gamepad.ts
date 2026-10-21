@@ -34,6 +34,8 @@ export class Gamepad {
   readonly input: Input = { jx: 0, jy: 0, btn: 0 };
   /** 按键按下时回调（用于震动反馈） */
   onPress: (bit: number) => void = () => {};
+  /** 按键变化立即发送，避免短按落在两次定时采样之间。 */
+  onButtons: () => void = () => {};
   private joyId: number | null = null;
   private origin = { x: 0, y: 0 };
   private base: HTMLElement;
@@ -196,7 +198,10 @@ export class Gamepad {
   }
 
   private sync() {
-    this.input.btn = this.touchBtn | this.keyBtn;
+    const btn = this.touchBtn | this.keyBtn;
+    if (btn === this.input.btn) return;
+    this.input.btn = btn;
+    this.onButtons();
   }
 
   /** 每帧调用：更新射门蓄力环 */

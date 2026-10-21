@@ -1,3 +1,6 @@
+import { CONFIG } from '../config';
+import { isLanPage, isNativeApp, lanSession } from '../net/lan-session';
+
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
 export function randomCode(n = 5) {
@@ -64,8 +67,8 @@ export function canFullscreen() {
 
 export function isFullscreen() {
   const d = document as any;
-  // 从主屏幕图标启动（standalone）也视为全屏
-  return !!(d.fullscreenElement || d.webkitFullscreenElement) || matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+  // 从主屏幕图标启动（standalone）或安卓原生 App（自身沉浸式）也视为全屏
+  return (isNativeApp() && /Android/.test(navigator.userAgent)) || !!(d.fullscreenElement || d.webkitFullscreenElement) || matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 }
 
 /** 必须在 click/touchend/keydown 等用户手势内调用（触屏的 pointerdown 不算手势） */
@@ -99,7 +102,13 @@ export function vibrate(p: number | number[]) {
 
 /** 二维码使用的页面地址：开发时用 localhost 打开会替换为局域网 IP */
 export function publicBase() {
+  if (roomOpts().mode === 'lan') {
+    const session = lanSession();
+    if (session) return session.baseUrl + '/';
+  }
   const { protocol, hostname, port, pathname } = location;
+  // Tauri 打包后的页面：macOS/Linux 为 tauri://localhost，Windows/Android 为 http://tauri.localhost
+  if (protocol === 'tauri:' || hostname === 'tauri.localhost') return CONFIG.siteUrl;
   if ((hostname === 'localhost' || hostname === '127.0.0.1') && __DEV_LAN_IP__) {
     return `${protocol}//${__DEV_LAN_IP__}${port ? ':' + port : ''}${pathname}`;
   }
@@ -109,6 +118,7 @@ export function publicBase() {
 /** 创建房间时在首页选的选项，存在本标签页里，刷新后仍有效 */
 export interface RoomOpts {
   listed: boolean;
+  mode?: 'lan';
   pin?: string; // 没有则不设密码
 }
 
@@ -123,7 +133,7 @@ export const isPin = (s: unknown): s is string => typeof s === 'string' && /^\d{
 export function roomOpts(): RoomOpts {
   try {
     const o = JSON.parse(store.get('sfb.roomopts', false) || '{}');
-    return { listed: !!o.listed, pin: isPin(o.pin) ? o.pin : undefined };
+    return { listed: o.mode === 'lan' ? false : !!o.listed, mode: o.mode === 'lan' ? 'lan' : undefined, pin: isPin(o.pin) ? o.pin : undefined };
   } catch {
     return { listed: false };
   }
@@ -131,7 +141,10 @@ export function roomOpts(): RoomOpts {
 
 /** 二维码地址：带上密码，扫码的人无需再输入（hash 部分不会发给任何服务器） */
 export function joinUrl({ room, pin }: RoomRef) {
-  return `${publicBase()}#/join/${room}${pin ? `?pin=${pin}` : ''}`;
+  const query = new URLSearchParams();
+  if (roomOpts().mode === 'lan' || isLanPage()) query.set('lan', '1');
+  if (pin) query.set('pin', pin);
+  return `${publicBase()}#/join/${room}${query.size ? `?${query}` : ''}`;
 }
 
 /** public/brand 下的品牌素材地址（兼容 GitHub Pages 子路径） */

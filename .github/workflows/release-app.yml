@@ -1,0 +1,237 @@
+name: Build app installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-installers-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run tauri -- --version
+      - run: npm test
+      - run: python -m unittest discover -s .github/scripts -p 'test_*.py'
+      - name: Check application version
+        id: version
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import assert from 'node:assert/strict';
+          const version = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+          const tauri = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
+          const cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\s*=\s*"([^"]+)"/m)?.[1];
+          assert.equal(tauri.version, version, 'Tauri and package.json versions must match');
+          assert.equal(cargo, version, 'Cargo and package.json versions must match');
+          assert.equal(tauri.bundle.windows.wix.version, version.split('-')[0], 'MSI version must match the numeric application version');
+          if (process.env.GITHUB_REF_TYPE === 'tag') {
+            assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'Tag must match the application version');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${version}\n`);
+          NODE
+
+  desktop:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            rust-targets: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+          - name: macos-universal
+            os: macos-14
+            target: universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: dmg
+          - name: linux-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            rust-targets: x86_64-unknown-linux-gnu
+            bundles: deb,rpm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.name }}
+      - run: npm ci
+      - name: Build desktop installers
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+        run: npm run tauri -- build --ci --target "$TARGET" --bundles "$BUNDLES"
+      - name: Collect installers only
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.name }}
+          APP_VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          mkdir -p installers
+          while IFS= read -r -d '' package; do
+            cp "$package" "installers/ScanKick_${APP_VERSION}_${PLATFORM}.${package##*.}"
+          done < <(find "src-tauri/target/$TARGET/release/bundle" -type f \( -name '*.exe' -o -name '*.msi' -o -name '*.dmg' -o -name '*.deb' -o -name '*.rpm' \) -print0)
+      - uses: actions/upload-artifact@v6
+        with:
+          name: installer-${{ matrix.name }}
+          path: installers/*
+          if-no-files-found: error
+          retention-days: 14
+
+  android:
+    needs: check
+    runs-on: ubuntu-22.04
+    env:
+      ANDROID_NDK_VERSION: '28.2.13676358'
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      APP_VERSION: ${{ needs.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
+      - name: Install Android SDK and NDK
+        run: |
+          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' "ndk;$ANDROID_NDK_VERSION"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: android-arm64
+      - run: npm ci
+      - name: Initialize Android project
+        run: |
+          if [[ ! -f src-tauri/gen/android/app/build.gradle.kts ]]; then
+            npm run tauri -- android init --ci --skip-targets-install
+          fi
+          chmod +x src-tauri/gen/android/gradlew
+          python .github/scripts/prepare-android.py
+      - name: Configure Android signing
+        id: signing
+        run: |
+          python <<'PY'
+          import base64, os
+          from pathlib import Path
+          names = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
+          present = [bool(os.environ.get(name)) for name in names]
+          if any(present) and not all(present):
+              raise SystemExit('Configure all four ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets, or leave all unset')
+          signed = all(present)
+          if signed:
+              path = Path(os.environ['RUNNER_TEMP']) / 'scankick-upload.jks'
+              path.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
+              path.chmod(0o600)
+              with open(os.environ['GITHUB_ENV'], 'a') as output:
+                  output.write(f'ANDROID_KEYSTORE_PATH={path}\n')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'signed={str(signed).lower()}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('Android: release build with production signing.\n' if signed else 'Android: release build with test signing; configure signing secrets for stable release upgrades.\n')
+          PY
+      - name: Build APK only
+        run: npm run tauri -- android build --ci --apk --target aarch64
+      - name: Collect installable APK only
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          mapfile -d '' packages < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' ! -name '*unsigned*' -print0)
+          if [[ ${#packages[@]} -ne 1 ]]; then
+            echo 'Expected exactly one installable ARM64 APK'
+            exit 1
+          fi
+          suffix=''
+          if [[ "$SIGNED" != true ]]; then suffix='-test-signed'; fi
+          mkdir -p installers
+          cp "${packages[0]}" "installers/ScanKick_${APP_VERSION}_android-arm64${suffix}.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "${packages[0]}"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "${packages[0]}")"
+          if [[ "$badging" == *application-debuggable* ]]; then
+            echo 'Expected a non-debuggable release APK'
+            exit 1
+          fi
+          ls -lh installers/*.apk
+      - uses: actions/upload-artifact@v6
+        with:
+          name: installer-android-arm64
+          path: installers/*.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/scankick-upload.jks"
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [desktop, android]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: installer-*
+          path: installers
+          merge-multiple: true
+      - name: Publish installer assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" installers/* --clobber
+          else
+            args=(--verify-tag --title "ScanKick $RELEASE_TAG" --generate-notes)
+            if [[ "${RELEASE_TAG#v}" == *-* ]]; then args+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" installers/* "${args[@]}"
+          fi

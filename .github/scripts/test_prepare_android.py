@@ -1,0 +1,74 @@
+import os
+from pathlib import Path
+import runpy
+import tempfile
+import unittest
+import xml.etree.ElementTree as ET
+
+
+class AndroidConfigTest(unittest.TestCase):
+    def test_generated_project_keeps_permissions_and_is_idempotent(self):
+        script = Path(__file__).with_name("prepare-android.py").resolve()
+        namespace = "http://schemas.android.com/apk/res/android"
+        for internet in (False, True):
+            with self.subTest(existing_internet=internet), tempfile.TemporaryDirectory() as directory:
+                previous = Path.cwd()
+                try:
+                    os.chdir(directory)
+                    app = Path("src-tauri/gen/android/app")
+                    (app / "src/main").mkdir(parents=True)
+                    permission = '<uses-permission android:name="android.permission.INTERNET" />' if internet else ''
+                    manifest = app / "src/main/AndroidManifest.xml"
+                    manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick"><activity android:name=".MainActivity" /></application></manifest>', encoding="utf-8")
+                    gradle = app / "build.gradle.kts"
+                    gradle.write_text('plugins { id("com.android.application") }\n' + ('// ScanKick CI signing\n// old signing configuration\n' if internet else ''), encoding="utf-8")
+                    activity = app / "src/main/java/io/github/nosugark/scankick/MainActivity.kt"
+                    activity.parent.mkdir(parents=True)
+                    activity.write_text("// Generated default activity\n", encoding="utf-8")
+                    launcher = app / "src/main/res/mipmap-mdpi/ic_launcher.png"
+                    launcher.parent.mkdir(parents=True)
+                    launcher.write_bytes(b"default launcher")
+                    wrapper = app.parent / "gradle/wrapper/gradle-wrapper.properties"
+                    wrapper.parent.mkdir(parents=True)
+                    distribution = "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14.3-bin.zip\n"
+                    wrapper.write_text(distribution + ("networkTimeout=10000\n" if internet else ""), encoding="utf-8")
+                    runpy.run_path(str(script))
+                    first_manifest = manifest.read_bytes()
+                    first_gradle = gradle.read_bytes()
+                    first_wrapper = wrapper.read_bytes()
+                    first_activity = activity.read_bytes()
+                    runpy.run_path(str(script))
+                    self.assertEqual(manifest.read_bytes(), first_manifest)
+                    self.assertEqual(gradle.read_bytes(), first_gradle)
+                    self.assertEqual(wrapper.read_bytes(), first_wrapper)
+                    self.assertEqual(activity.read_bytes(), first_activity)
+                    icons = script.parents[2] / "src-tauri/icons/android"
+                    for source in icons.rglob("*"):
+                        if source.is_file():
+                            self.assertEqual((app / "src/main/res" / source.relative_to(icons)).read_bytes(), source.read_bytes())
+                    self.assertEqual(wrapper.read_text(encoding="utf-8"), distribution + "networkTimeout=120000\n")
+                    root = ET.parse(manifest).getroot()
+                    permissions = [p.get(f"{{{namespace}}}name") for p in root.findall("uses-permission")]
+                    self.assertEqual(permissions.count("android.permission.INTERNET"), 1)
+                    self.assertIn("android.permission.VIBRATE", permissions)
+                    self.assertEqual(permissions.count("android.permission.CAMERA"), 1)
+                    self.assertEqual(root.find("uses-feature").get(f"{{{namespace}}}required"), "false")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "ScanKick")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}icon"), "@mipmap/ic_launcher")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}roundIcon"), "@mipmap/ic_launcher")
+                    self.assertEqual(root.find("application/activity").get(f"{{{namespace}}}screenOrientation"), "fullSensor")
+                    network = ET.parse(app / "src/main/res/xml/scankick_network_security.xml").getroot()
+                    self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "false")
+                    domains = {d.text for d in network.findall("domain-config/domain")}
+                    self.assertEqual(domains, {"127.0.0.1", "localhost", "tauri.localhost"})
+                    self.assertTrue(all(d.get("includeSubdomains") == "false" for d in network.findall("domain-config/domain")))
+                    self.assertIn('System.getenv("ANDROID_KEYSTORE_PASSWORD")', gradle.read_text(encoding="utf-8"))
+                    self.assertIn('signingConfig = signingConfigs.getByName("debug")', gradle.read_text(encoding="utf-8"))
+                    self.assertIn('applicationIdSuffix = ".debug"', gradle.read_text(encoding="utf-8"))
+                    self.assertNotIn('old signing configuration', gradle.read_text(encoding="utf-8"))
+                finally:
+                    os.chdir(previous)
+
+
+if __name__ == "__main__":
+    unittest.main()

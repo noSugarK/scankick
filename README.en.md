@@ -88,6 +88,18 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 | **X** | Sprint | Hold to run faster, uses stamina |
 | **Y** | Tackle | Slide forward; a hit knocks the opponent down briefly, with cooldown |
 
+## Match modes and party rules
+
+The host can choose these settings before kickoff. They stay fixed during the match.
+
+| Mode | Win condition |
+|---|---|
+| Timed | Highest score wins at full time; tied scores are a draw |
+| First to 3 | No time limit; the first team to score 3 goals wins |
+| Golden goal | If tied at full time, retain the score and kick off again; the next goal wins |
+
+Each match can also use one party rule: **Giant ball** (double diameter, with matching collision and kick reach), **Endless stamina** (sprinting never drains stamina), or **Super bounce** (less drag and stronger rebounds off boundaries and posts). Choose **None** for standard rules. The active rule appears on the match screen.
+
 <details>
 <summary><b>Room host, surrender, and ending a match</b></summary>
 
@@ -111,7 +123,7 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 
 #### How it works
 
-- **Host** (the big screen, or the hosting phone; see `src/game/host-game.ts`): runs 60 Hz physics and match logic and broadcasts binary state snapshots to every phone at 30 Hz, about 115 bytes per frame for 8 players.
+- **Host** (the big screen, or the hosting phone; see `src/game/host-game.ts`): runs 60 Hz physics and match logic and broadcasts binary state snapshots to every phone at 30 Hz, 124 bytes per frame for 8 players.
 - **Phones**: send input at 30 Hz, interpolate snapshots, and predict their own player locally.
 - **Connectivity**: WebRTC signaling goes over public MQTT (EMQX, reachable from mainland China) to set up a P2P DataChannel. If a direct link fails it falls back to an MQTT relay and retries a direct link every 15 seconds. The public lobby uses MQTT retained messages; see `src/net/lobby.ts`.
 
@@ -120,9 +132,62 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 ```bash
 npm install
 npm run dev        # HTTPS, so phones on the LAN can scan in (trust the self-signed cert the first time)
+npm test           # Physics and input regression tests (Node.js 22.15+ or 24 LTS)
 ```
 
 When the big screen is opened on `localhost`, the QR code switches to your LAN IP automatically. Append `?relay` to a phone URL (for example `#/join/ABCDE?relay`) to force the relay.
+
+Inputs use 32-bit sequence numbers to reject stale and duplicate packets. Button changes are sent immediately over the reliable ordered channel, or MQTT QoS 1 when relaying; the host processes press/release transitions on separate simulation ticks. Snapshots keep their existing low-latency transport. Protocol v3 adds match mode, golden-goal status, and party rule to snapshots. Rooms are isolated from older pages: after updating, refresh both the host and phones, then create and join a new room.
+
+#### Tauri app development (experimental)
+
+The website and app share `src/` and `public/`; the native entry points and configuration live in `src-tauri/`.
+The app home page offers Online and Local network modes. Online keeps MQTT/WebRTC; local mode uses a Rust HTTP/WebSocket server and the existing authoritative game, without connecting to public discovery, MQTT, or STUN.
+
+For local play, connect everyone to the same Wi-Fi or a manually enabled hotspot. Select Local network in the app and create a big-screen or phone-hosted room, optionally with a password. Select a reachable network interface and let players scan the QR code using their system camera to join in a browser. Keep the host foreground and its screen awake. Leaving the room stops the server; a new room requires a new QR code.
+
+Avoid VPN/virtual interfaces. Windows Firewall must allow incoming connections on the network in use; guest Wi-Fi with client isolation may block players. Local HTTP pages may not support camera access or screen wake locks, so use the system camera and prevent automatic locking manually.
+Automatic hotspots, background matches, and Android/iOS device compatibility validation are not included yet.
+
+With Rust, the Tauri CLI, and the platform build tools installed:
+
+```bash
+npm ci
+npm run app:dev      # Start Vite and the native window
+npm run app:build    # Build installers for the current desktop platform
+cargo test --manifest-path src-tauri/Cargo.toml --lib  # Local HTTP/WebSocket integration test
+```
+
+App development first builds the static assets served to players, then starts `http://127.0.0.1:1420` and fails if the port is occupied. Restart the app development command after page changes to refresh the embedded player assets. `npm run dev` keeps the original HTTPS website server.
+Windows requires MSVC Build Tools and WebView2. macOS/iOS requires a Mac with Xcode. Android requires the SDK/NDK and `cargo tauri android init` to generate its platform project.
+Use `cargo tauri android dev` or `cargo tauri android build` for Android; configure a reachable development server address for the device.
+The existing GitHub Pages workflow continues to deploy the website independently.
+
+#### App installers (GitHub Actions)
+
+Run `Build app installers` manually to download installers from Actions Artifacts, or push a `v*` tag to build all platforms and publish them to a GitHub Release after every build succeeds.
+
+Installer names include the version, OS, and architecture:
+
+- Windows: `ScanKick_0.1.0_windows-x64.exe` and `.msi`.
+- macOS Intel / Apple Silicon: `ScanKick_0.1.0_macos-universal.dmg`.
+- Linux: `ScanKick_0.1.0_linux-x64.deb` and `.rpm`.
+- Android: `ScanKick_0.1.0_android-arm64.apk`, with `-test-signed` before `.apk` when production signing secrets are absent.
+
+Only installers are uploaded. No AppImage, raw binaries, `.app` directories, AAB, or build directories are uploaded. Actions artifacts expire after 14 days; GitHub separately provides its automatic source archive links on Releases. CI installs the Android SDK/NDK and initializes the Android project if absent; local `npm run app:build` still builds only the current desktop platform.
+
+Keep the versions in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml` identical, commit the changes, then push a matching tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tags such as `v0.1.0-beta.1` create prereleases and must also match the application version. Manual dispatch may not appear until the workflow reaches the default branch; pushing a tag pointing to a commit containing the workflow can trigger it beforehand.
+
+MSI requires a numeric internal version: keep `bundle.windows.wix.version` equal to the application version without its prerelease suffix (for example, `0.1.0`); CI checks this. Download filenames retain the full version, such as `0.1.0-beta.2`.
+
+Android always uses an optimized Release build with Rust debug symbols stripped. Without production signing secrets it uses a test key and keeps the `.debug` application ID suffix. The test key changes between CI runs, so upgrades are not guaranteed. Configure all four repository Actions secrets to use production signing instead: `ANDROID_KEYSTORE_BASE64` (single-line Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The production keystore is written only to runner temporary storage and removed afterward. Windows/macOS publisher signing and Apple notarization are not configured; installation may show OS verification prompts.
 
 #### Deploy to GitHub Pages
 

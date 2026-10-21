@@ -50,8 +50,8 @@ export class Signal {
     this.handler = fn;
   }
 
-  sub(topic: string) {
-    this.client?.subscribe(`${this.prefix}/${topic}`, { qos: 0 });
+  sub(topic: string, qos: 0 | 1 = 0) {
+    this.client?.subscribe(`${this.prefix}/${topic}`, { qos });
   }
   unsub(topic: string) {
     this.client?.unsubscribe(`${this.prefix}/${topic}`);
@@ -62,10 +62,10 @@ export class Signal {
     return topic.startsWith(this.prefix + '/') ? topic.slice(this.prefix.length + 1) : topic;
   }
 
-  pub(topic: string, data: Uint8Array | object, retain = false) {
+  pub(topic: string, data: Uint8Array | object, retain = false, qos: 0 | 1 = 0) {
     if (!this.client?.connected) return;
     const payload = data instanceof Uint8Array ? data : enc.encode(JSON.stringify(data));
-    this.client.publish(`${this.prefix}/${topic}`, payload as any, { qos: 0, retain });
+    this.client.publish(`${this.prefix}/${topic}`, payload as any, { qos, retain });
   }
 
   close() {

@@ -1,4 +1,5 @@
 import { t, type Key } from '../i18n';
+import { MATCH_MODES, PARTY_RULES } from '../game/types';
 import { bindSiteTools, icon, siteFooter, siteTools } from '../ui/site';
 
 const section = (n: number, title: Key, body: string) =>
@@ -30,6 +31,11 @@ export function mountGuide(app: HTMLElement) {
         <p class="hint">${t('guide.keys')}</p>`)}
       ${section(3, 'guide.s3', paras('guide.s3a', 'guide.s3b', 'guide.s3c'))}
       ${section(4, 'guide.s4', paras('guide.s4a', 'guide.s4b'))}
+      ${section(5, 'cfg.mode', `
+        ${MATCH_MODES.map((mode) => `<p><b>${t(`mode.${mode}`)}</b>：${t(`mode.hint.${mode}`)}</p>`).join('')}
+        <h3>${t('cfg.party')}</h3>
+        <p>${t('party.hint.0')}</p>
+        ${PARTY_RULES.filter((rule) => rule !== 0).map((rule) => `<p><b>${t(`party.${rule}`)}</b>：${t(`party.hint.${rule}`)}</p>`).join('')}`)}
     </main>
     ${siteFooter()}
   </div>`;

@@ -3,7 +3,7 @@ import { CONFIG } from '../config';
 import { LEVEL_NAME } from '../game/ai';
 import { TEAM_NAME } from '../game/render';
 import { t } from '../i18n';
-import { DURATIONS, type PlayerInfo, type Settings, type Team } from '../game/types';
+import { DURATIONS, MATCH_MODES, PARTY_RULES, type PlayerInfo, type Settings, type Team } from '../game/types';
 import { icon } from './site';
 import { esc } from './util';
 
@@ -21,6 +21,7 @@ export function playerTag(p: PlayerInfo): string {
   if (p.bot) return 'AI';
   if (!p.online) return t('status.offline');
   if (p.link === 'local') return '';
+  if (p.link === 'lan') return t('status.lan');
   return t(p.link === 'p2p' ? 'status.p2p' : 'status.relay');
 }
 
@@ -84,9 +85,17 @@ export function settingsHtml(st: Settings): string {
   const chip = (k: string, v: number, label: string, on: boolean) =>
     `<button class="chip ${on ? 'on' : ''}" data-k="${k}" data-v="${v}">${label}</button>`;
   return `<div class="cfg">
-    <div class="cfg-row"><span class="cfg-label">${t('cfg.duration')}</span><div class="chips">${DURATIONS.map((v) =>
-      chip('duration', v, t('play.minutes', { n: v / 60 }), v === st.duration),
+    <div class="cfg-row"><span class="cfg-label">${t('cfg.mode')}</span><div class="chips">${MATCH_MODES.map((v) =>
+      chip('mode', v, t(`mode.${v}`), v === st.mode),
     ).join('')}</div></div>
+    <p class="cfg-hint muted small">${t(`mode.hint.${st.mode}`)}</p>
+    <div class="cfg-row"><span class="cfg-label">${t('cfg.party')}</span><div class="chips">${PARTY_RULES.map((v) =>
+      chip('party', v, t(`party.${v}`), v === st.party),
+    ).join('')}</div></div>
+    <p class="cfg-hint muted small">${t(`party.hint.${st.party}`)}</p>
+    ${st.mode === 1 ? '' : `<div class="cfg-row"><span class="cfg-label">${t('cfg.duration')}</span><div class="chips">${DURATIONS.map((v) =>
+      chip('duration', v, t('play.minutes', { n: v / 60 }), v === st.duration),
+    ).join('')}</div></div>`}
     <div class="cfg-row"><span class="cfg-label">${t('cfg.level')}</span><div class="chips">${LEVEL_NAME.map((n, i) =>
       chip('level', i, n, i === st.level),
     ).join('')}</div></div>
@@ -96,7 +105,7 @@ export function settingsHtml(st: Settings): string {
 
 /** 非房主看到的设置摘要 */
 export function settingsSummary(st: Settings): string {
-  return `${t('play.minutes', { n: st.duration / 60 })} · AI ${LEVEL_NAME[st.level]}${st.autoFill ? ` · ${t('cfg.autoFill')}` : ''}`;
+  return `${t(`mode.${st.mode}`)}${st.mode === 1 ? '' : ` · ${t('play.minutes', { n: st.duration / 60 })}`}${st.party ? ` · ${t(`party.${st.party}`)}` : ''} · AI ${LEVEL_NAME[st.level]}${st.autoFill ? ` · ${t('cfg.autoFill')}` : ''}`;
 }
 
 /** 绑定设置、添加 AI、换队，以及成员左滑与二次确认 */

@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { F } from './sim';
+import { F, ballRadius } from './sim';
 import { FLAG_CHARGE, FLAG_STUN, FLAG_TACKLE, Phase, type PlayerInfo, type SnapPlayer, type Snapshot } from './types';
 
 export const TEAM_COLOR = ['#e5484d', '#3e7bfa'];
@@ -173,8 +173,9 @@ export class Renderer {
   private drawBall(s: ViewState, dt: number) {
     const { ctx } = this;
     const b = s.ball;
+    const r = ballRadius(s.party);
     const speed = Math.hypot(b.vx, b.vy);
-    this.ballSpin += (speed * dt) / F.BR;
+    this.ballSpin += (speed * dt) / r;
     this.trail.push({ x: b.x, y: b.y });
     if (this.trail.length > 10) this.trail.shift();
     if (speed > 480) {
@@ -182,29 +183,29 @@ export class Renderer {
         const t = this.trail[i];
         ctx.fillStyle = `rgba(255,255,255,${(i / this.trail.length) * 0.35})`;
         ctx.beginPath();
-        ctx.arc(t.x, t.y, F.BR * (0.5 + (i / this.trail.length) * 0.5), 0, Math.PI * 2);
+        ctx.arc(t.x, t.y, r * (0.5 + (i / this.trail.length) * 0.5), 0, Math.PI * 2);
         ctx.fill();
       }
     }
     ctx.fillStyle = 'rgba(0,0,0,0.25)';
     ctx.beginPath();
-    ctx.ellipse(b.x + 3, b.y + 4, F.BR, F.BR * 0.8, 0, 0, Math.PI * 2);
+    ctx.ellipse(b.x + 3, b.y + 4, r, r * 0.8, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(b.x, b.y, F.BR, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#222';
     for (let i = 0; i < 3; i++) {
       const a = this.ballSpin + (i * Math.PI * 2) / 3;
       ctx.beginPath();
-      ctx.arc(b.x + Math.cos(a) * F.BR * 0.5, b.y + Math.sin(a) * F.BR * 0.5, 2.6, 0, Math.PI * 2);
+      ctx.arc(b.x + Math.cos(a) * r * 0.5, b.y + Math.sin(a) * r * 0.5, r * 0.26, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, F.BR, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -328,10 +329,20 @@ export class Renderer {
     ctx.fillText(String(s.score[0]), -W / 2 + 42, H / 2 + 1);
     ctx.fillText(String(s.score[1]), W / 2 - 42, H / 2 + 1);
     ctx.font = 'bold 22px ui-monospace, Menlo, monospace';
-    const clock = s.phase === Phase.Lobby ? t('hud.warmup') : fmtTime(s.timeLeft);
-    ctx.fillStyle = s.phase === Phase.Playing && s.timeLeft < 10 ? '#ff453a' : '#fff';
-    ctx.font = s.phase === Phase.Lobby ? 'bold 20px system-ui, sans-serif' : 'bold 22px ui-monospace, Menlo, monospace';
+    const clock = s.phase === Phase.Lobby ? t('hud.warmup') : s.golden ? t('hud.golden') : s.mode === 1 ? t('mode.1') : fmtTime(s.timeLeft);
+    ctx.fillStyle = s.golden ? '#ffd60a' : s.mode !== 1 && s.phase === Phase.Playing && s.timeLeft < 10 ? '#ff453a' : '#fff';
+    ctx.font = s.golden || s.mode === 1 ? 'bold 16px system-ui, sans-serif' : s.phase === Phase.Lobby ? 'bold 20px system-ui, sans-serif' : 'bold 22px ui-monospace, Menlo, monospace';
     ctx.fillText(clock, 0, H / 2 + 1);
+    const rules = [s.mode === 2 && !s.golden ? t('mode.2') : '', s.party ? t(`party.${s.party}`) : ''].filter(Boolean).join(' · ');
+    if (rules) {
+      ctx.font = '600 13px system-ui, sans-serif';
+      const width = ctx.measureText(rules).width + 20;
+      ctx.fillStyle = 'rgba(13,31,22,0.8)';
+      roundRect(ctx, -width / 2, H + 4, width, 24, 8);
+      ctx.fill();
+      ctx.fillStyle = '#ffd60a';
+      ctx.fillText(rules, 0, H + 16);
+    }
     ctx.restore();
   }
 
@@ -342,6 +353,7 @@ export class Renderer {
     let color = '#fff';
     if (s.phase === Phase.Ready) {
       text = s.phaseTime < 1 ? t('hud.ready') : t('hud.kickoff');
+      if (s.golden) sub = t('hud.golden');
     } else if (s.phase === Phase.Goal && s.goalText) {
       text = 'GOAL!';
       sub = s.goalText;

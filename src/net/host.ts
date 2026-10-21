@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import type { RejectReason, Team } from '../game/types';
 import { Signal, isJson, parseJson } from './signal';
 
-export type LinkMode = 'connecting' | 'p2p' | 'relay';
+export type LinkMode = 'connecting' | 'p2p' | 'relay' | 'lan';
 
 export interface Hello {
   t: 'hello';
@@ -16,6 +16,7 @@ export interface Hello {
 }
 
 export interface HostCallbacks {
+  onStatus?(ok: boolean): void;
   /** 新客户端请求加入，返回 null 允许，或返回拒绝原因 */
   onHello(cid: string, hello: Hello): RejectReason | null;
   /** 对端已创建（此时可以 sendJson，消息会先走 MQTT） */
@@ -172,7 +173,7 @@ export class HostNet {
       if (isJson(payload)) this.onSignalJson(cid, parseJson(payload));
       else this.receive(cid, payload);
     });
-    this.signal.sub('h/+');
+    this.signal.sub('h/+', 1);
     this.watchdog = window.setInterval(() => this.checkTimeouts(), 1000);
   }
 

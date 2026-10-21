@@ -8,6 +8,9 @@ import { mvpLineHtml, statsTableHtml } from '../ui/stats-ui';
 import { bindLobby, pinLineHtml, settingsHtml, teamCardHtml } from '../ui/settings-ui';
 import { icon } from '../ui/site';
 import { audioReady, unlockAudio } from '../ui/sound';
+import { lanSession } from '../net/lan-session';
+import { LanHost } from '../net/lan-host';
+import { bindLanAddress, lanInfoHtml } from '../ui/lan-room';
 import { brand, enterFullscreen, esc, joinUrl, keepAwake, randomCode, roomOpts, store } from '../ui/util';
 
 export function mountScreen(app: HTMLElement) {
@@ -17,6 +20,7 @@ export function mountScreen(app: HTMLElement) {
     store.set('sfb.room', room, false);
   }
   const opts = roomOpts();
+  const local = opts.mode === 'lan' ? lanSession() : null;
   const qrUrl = joinUrl({ room, pin: opts.pin });
 
   app.innerHTML = `
@@ -26,9 +30,12 @@ export function mountScreen(app: HTMLElement) {
       <canvas></canvas><div>${t('screen.scanJoin')} · <b>${room}</b>${opts.pin ? ` · ${t('play.pinLine')} ${opts.pin}` : ''}</div>
     </div>
     <img class="game-logo screen-logo" src="${brand('logo-dark-sm.png')}" alt="">
-    <div class="net-badge"><i></i><span>${t('status.connectingSignal')}</span></div>
-    <button class="ghost end-btn" hidden>${t('screen.end')}</button>
-    <button class="ghost open-lobby" hidden>${t('screen.openPanel')}</button>
+    <div class="net-badge"><i></i><span>${t(local ? 'lan.starting' : 'status.connectingSignal')}</span></div>
+    <div class="screen-actions">
+      <button class="ghost end-btn" hidden>${t('screen.end')}</button>
+      <button class="ghost open-lobby" hidden>${t('screen.openPanel')}</button>
+      <button class="ghost leave-room">${t('play.leave')}</button>
+    </div>
     <div class="lobby card">
       <button class="ghost lobby-close" title="${t('screen.closePanel')} (Esc)" aria-label="${t('screen.closePanel')}">×</button>
       <div class="lobby-join">
@@ -37,6 +44,7 @@ export function mountScreen(app: HTMLElement) {
         ${pinLineHtml(opts.pin)}
         <div class="muted small">${t('screen.orOpen')}<br><span class="url">${esc(joinUrl({ room }))}</span></div>
         <button class="ghost save-qr">${icon.download}${t('qr.save')}</button>
+        ${local ? lanInfoHtml() : ''}
       </div>
       <div class="lobby-side">
         <div class="lobby-head">
@@ -73,12 +81,17 @@ export function mountScreen(app: HTMLElement) {
   QRCode.toCanvas($('.qr'), qrUrl, { width: 260, margin: 1 });
   QRCode.toCanvas($('.corner-qr canvas'), qrUrl, { width: 110, margin: 1 });
 
-  const game = new HostGame(room, opts);
+  bindLanAddress(app, () => {
+    QRCode.toCanvas($('.qr'), joinUrl({ room, pin: opts.pin }), { width: 260, margin: 1 });
+    QRCode.toCanvas($('.corner-qr canvas'), joinUrl({ room, pin: opts.pin }), { width: 110, margin: 1 });
+    $('.url').textContent = joinUrl({ room });
+  });
+  const game = new HostGame(room, opts, local ? (_room, cb) => new LanHost(local, cb) : undefined);
   const renderer = new Renderer($('.stage'));
 
   game.onStatus = (ok, text) => {
     badge.classList.toggle('ok', ok);
-    badge.querySelector('span')!.textContent = text;
+    badge.querySelector('span')!.textContent = ok && local ? t('status.lan') : text;
   };
   game.onRoster = (r) => renderUi(r);
   game.onPhase = () => renderUi(game.rosterMsg());
@@ -138,11 +151,18 @@ export function mountScreen(app: HTMLElement) {
   $('.start').onclick = () => game.startMatch();
   $('.save-qr').onclick = () => saveQrCard({ room, pin: opts.pin });
   $('.fs').onclick = () => enterFullscreen();
+  $('.leave-room').onclick = () => {
+    if (!confirm(t('play.confirmCloseRoom'))) return;
+    game.close();
+    store.set('sfb.room', '', false);
+    location.hash = '#/';
+  };
   endBtn.onclick = () => {
     if (confirm(t('screen.confirmEnd'))) game.endMatch();
   };
   cornerEl.onclick = () => cornerEl.classList.toggle('mini');
   window.addEventListener('keydown', (e) => {
+    if (e.target instanceof HTMLElement && e.target.closest('button, input, select, textarea, a')) return;
     const phase = game.sim.phase;
     if ((e.code === 'Space' || e.code === 'Enter') && (phase === Phase.Lobby || phase === Phase.Ended)) game.startMatch();
     if (e.code === 'KeyF') enterFullscreen();

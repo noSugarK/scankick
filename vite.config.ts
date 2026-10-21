@@ -12,14 +12,17 @@ function lanIp(): string {
   return '';
 }
 
-export default defineConfig(({ command }) => ({
+export default defineConfig(({ command, mode }) => ({
   // 相对路径 + hash 路由：部署到 GitHub Pages 任意仓库名下都能直接用
   base: './',
   // 手机端的屏幕常亮、全屏等能力需要 HTTPS；NO_HTTPS=1 可关闭（本机调试用）
-  plugins: command === 'serve' && !process.env.NO_HTTPS ? [basicSsl()] : [],
+  plugins: command === 'serve' && mode !== 'app' && !process.env.NO_HTTPS ? [basicSsl()] : [],
   define: {
     __DEV_LAN_IP__: JSON.stringify(command === 'serve' ? lanIp() : ''),
   },
-  server: { port: Number(process.env.PORT) || 5173 },
+  server: {
+    port: Number(process.env.PORT) || 5173,
+    watch: { ignored: ['**/src-tauri/**'] },
+  },
   build: { target: 'es2020' },
 }));

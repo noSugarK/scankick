@@ -1,11 +1,14 @@
 // 网络配置：国内可用的信令（MQTT over WSS）与 STUN/TURN
 export const CONFIG = {
+  // 打包进原生 App 的页面地址别人打不开，在线模式的二维码改指向部署的网站
+  siteUrl: 'https://nosugark.cc.cd/scankick/',
   // 依次尝试，第一个能连上的作为信令通道；也作为 P2P 失败时的中继兜底
   brokers: [
     'wss://broker-cn.emqx.io:8084/mqtt',
     'wss://broker.emqx.io:8084/mqtt',
   ],
-  topicPrefix: 'scanfb/v1',
+  // v3 快照增加比赛模式与派对规则，隔离使用旧快照格式的页面。
+  topicPrefix: 'scanfb/v3',
   iceServers: [
     { urls: ['stun:stun.miwifi.com:3478', 'stun:stun.chat.bilibili.com:3478'] },
     // 有自建 coturn 时在这里加上，可显著提高 4G 下的直连成功率：
