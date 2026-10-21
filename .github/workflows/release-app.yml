@@ -13,7 +13,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TAURI_CLI_VERSION: '2.11.4'
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -28,6 +27,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run tauri -- --version
       - run: npm test
       - run: python -m unittest discover -s .github/scripts -p 'test_*.py'
       - name: Check application version
@@ -95,7 +95,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           BUNDLES: ${{ matrix.bundles }}
-        run: npx --yes --package "@tauri-apps/cli@$TAURI_CLI_VERSION" tauri build --ci --target "$TARGET" --bundles "$BUNDLES"
+        run: npm run tauri -- build --ci --target "$TARGET" --bundles "$BUNDLES"
       - name: Collect installers only
         shell: bash
         env:
@@ -152,7 +152,7 @@ jobs:
       - name: Initialize Android project
         run: |
           if [[ ! -f src-tauri/gen/android/app/build.gradle.kts ]]; then
-            npx --yes --package "@tauri-apps/cli@$TAURI_CLI_VERSION" tauri android init --ci --skip-targets-install
+            npm run tauri -- android init --ci --skip-targets-install
           fi
           chmod +x src-tauri/gen/android/gradlew
           python .github/scripts/prepare-android.py
@@ -184,7 +184,7 @@ jobs:
         run: |
           args=(android build --ci --apk --target aarch64)
           if [[ "$SIGNED" != true ]]; then args+=(--debug); fi
-          npx --yes --package "@tauri-apps/cli@$TAURI_CLI_VERSION" tauri "${args[@]}"
+          npm run tauri -- "${args[@]}"
       - name: Collect installable APK only
         env:
           SIGNED: ${{ steps.signing.outputs.signed }}

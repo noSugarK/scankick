@@ -1,9 +1,10 @@
 {
   "name": "scankick",
   "private": true,
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "type": "module",
   "scripts": {
+    "tauri": "tauri",
     "test": "node --test tests/regressions.test.mjs",
     "dev": "vite --host",
     "dev:app": "vite --host 127.0.0.1 --port 1420 --mode app --strictPort",
@@ -19,6 +20,7 @@
     "qrcode": "^1.5.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@types/qrcode": "^1.5.6",
     "@vitejs/plugin-basic-ssl": "^2.3.0",
     "typescript": "~5.9.3",

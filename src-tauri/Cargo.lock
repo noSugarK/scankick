@@ -2645,7 +2645,7 @@ dependencies = [
 
 [[package]]
 name = "scankick"
-version = "0.1.0-beta.2"
+version = "0.1.0-beta.3"
 dependencies = [
  "axum",
  "futures-util",
