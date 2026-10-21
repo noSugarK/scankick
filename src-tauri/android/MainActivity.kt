@@ -22,7 +22,7 @@ class MainActivity : TauriActivity() {
     @Volatile private var safeArea = "[0,0,0,0]"
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // Light status bar icons: both theme headers are dark green.
+        // Light icons until the page reports its edge colors through setLightBars.
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         super.onCreate(savedInstanceState)
         val content = findViewById<View>(android.R.id.content)
@@ -48,8 +48,17 @@ class MainActivity : TauriActivity() {
         this.webView = webView
         webView.addJavascriptInterface(object {
             @JavascriptInterface
-            fun get(): String = safeArea
-        }, "ScanKickSafeArea")
+            fun safeArea(): String = safeArea
+
+            // The page samples its own top/bottom edge colors, so icons stay readable on light and dark themes.
+            @JavascriptInterface
+            fun setLightBars(top: Boolean, bottom: Boolean) = runOnUiThread {
+                WindowCompat.getInsetsController(window, window.decorView).apply {
+                    isAppearanceLightStatusBars = top
+                    isAppearanceLightNavigationBars = bottom
+                }
+            }
+        }, "ScanKickAndroid")
     }
 
     // Tauri's activity handles orientation changes itself instead of being recreated.

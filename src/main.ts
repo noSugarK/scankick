@@ -44,14 +44,26 @@ async function route() {
 }
 
 // 安卓 App 由原生层提供状态栏/刘海的安全区（WebView 的 env(safe-area-inset-*) 不可靠）
-const safeArea = (window as { ScanKickSafeArea?: { get(): string } }).ScanKickSafeArea;
-if (safeArea) {
+const android = (window as { ScanKickAndroid?: { safeArea(): string; setLightBars(top: boolean, bottom: boolean): void } }).ScanKickAndroid;
+if (android) {
   const apply = () => {
-    const [top, right, bottom, left] = JSON.parse(safeArea.get()) as number[];
+    const [top, right, bottom, left] = JSON.parse(android.safeArea()) as number[];
     Object.entries({ top, right, bottom, left }).forEach(([k, v]) => document.documentElement.style.setProperty(`--safe-${k}`, `${v}px`));
   };
   apply();
   window.addEventListener('safeareachange', apply);
+  // 状态栏/导航栏图标颜色按页面上下边缘的实际底色决定：浅底用深色图标
+  const isLight = (y: number) => {
+    for (let el = document.elementFromPoint(innerWidth / 2, y); el; el = el.parentElement) {
+      const [r, g, b, a = 1] = getComputedStyle(el).backgroundColor.match(/[\d.]+/g)?.map(Number) ?? [];
+      if (a > 0) return 0.299 * r + 0.587 * g + 0.114 * b > 150;
+    }
+    return false;
+  };
+  const bars = () => setTimeout(() => android.setLightBars(isLight(1), isLight(innerHeight - 1)));
+  new MutationObserver(bars).observe(document.documentElement, { attributeFilter: ['data-theme'] });
+  new MutationObserver(bars).observe(app, { childList: true });
+  window.addEventListener('safeareachange', bars);
 }
 
 // 原生 App 里的外部链接交给系统浏览器打开，不在应用内跳走
