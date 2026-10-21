@@ -1,3 +1,4 @@
+import { CONFIG } from '../config';
 import { isLanPage, isNativeApp, lanSession } from '../net/lan-session';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -106,6 +107,8 @@ export function publicBase() {
     if (session) return session.baseUrl + '/';
   }
   const { protocol, hostname, port, pathname } = location;
+  // Tauri 打包后的页面：macOS/Linux 为 tauri://localhost，Windows/Android 为 http://tauri.localhost
+  if (protocol === 'tauri:' || hostname === 'tauri.localhost') return CONFIG.siteUrl;
   if ((hostname === 'localhost' || hostname === '127.0.0.1') && __DEV_LAN_IP__) {
     return `${protocol}//${__DEV_LAN_IP__}${port ? ':' + port : ''}${pathname}`;
   }

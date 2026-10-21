@@ -480,3 +480,17 @@ test('金球获胜原因和比分进入主机结算、名单与历史记录', ()
   assert.equal(host.rosterMsg().end, host.endInfo);
   assert.equal(host.history[0], host.endInfo);
 });
+
+test('原生 App 在线模式的二维码指向部署的网站', async () => {
+  const { joinUrl } = await import('../src/ui/util.ts');
+  const { CONFIG } = await import('../src/config.ts');
+  globalThis.__DEV_LAN_IP__ = '';
+  globalThis.window ??= {};
+  for (const origin of ['tauri://localhost/', 'http://tauri.localhost/']) {
+    globalThis.location = new URL(origin);
+    assert.equal(joinUrl({ room: 'ABCDE' }), `${CONFIG.siteUrl}#/join/ABCDE`);
+  }
+  globalThis.location = new URL('https://example.com/scankick/');
+  assert.equal(joinUrl({ room: 'ABCDE' }), 'https://example.com/scankick/#/join/ABCDE');
+  delete globalThis.location;
+});
