@@ -51,6 +51,8 @@ class AndroidConfigTest(unittest.TestCase):
                     permissions = [p.get(f"{{{namespace}}}name") for p in root.findall("uses-permission")]
                     self.assertEqual(permissions.count("android.permission.INTERNET"), 1)
                     self.assertIn("android.permission.VIBRATE", permissions)
+                    self.assertEqual(permissions.count("android.permission.CAMERA"), 1)
+                    self.assertEqual(root.find("uses-feature").get(f"{{{namespace}}}required"), "false")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "ScanKick")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}icon"), "@mipmap/ic_launcher")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}roundIcon"), "@mipmap/ic_launcher")

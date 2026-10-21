@@ -24,8 +24,12 @@ manifest = app / "src/main/AndroidManifest.xml"
 tree = ET.parse(manifest)
 root = tree.getroot()
 permission = f"{{{android}}}name"
-if not any(p.get(permission) == "android.permission.INTERNET" for p in root.findall("uses-permission")):
-    ET.SubElement(root, "uses-permission", {permission: "android.permission.INTERNET"})
+# The WebView asks for CAMERA at runtime for QR scanning; Android only prompts for declared permissions.
+for name in ("android.permission.INTERNET", "android.permission.CAMERA"):
+    if not any(p.get(permission) == name for p in root.findall("uses-permission")):
+        ET.SubElement(root, "uses-permission", {permission: name})
+if not any(f.get(permission) == "android.hardware.camera" for f in root.findall("uses-feature")):
+    ET.SubElement(root, "uses-feature", {permission: "android.hardware.camera", f"{{{android}}}required": "false"})
 application = root.find("application")
 if application is None:
     raise SystemExit("Generated Android manifest is missing <application>")
