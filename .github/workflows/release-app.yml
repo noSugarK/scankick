@@ -176,15 +176,10 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'signed={str(signed).lower()}\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
-              output.write('Android: signed release APK.\n' if signed else 'Android: debug APK; configure signing secrets for stable release upgrades.\n')
+              output.write('Android: release build with production signing.\n' if signed else 'Android: release build with test signing; configure signing secrets for stable release upgrades.\n')
           PY
       - name: Build APK only
-        env:
-          SIGNED: ${{ steps.signing.outputs.signed }}
-        run: |
-          args=(android build --ci --apk --target aarch64)
-          if [[ "$SIGNED" != true ]]; then args+=(--debug); fi
-          npm run tauri -- "${args[@]}"
+        run: npm run tauri -- android build --ci --apk --target aarch64
       - name: Collect installable APK only
         env:
           SIGNED: ${{ steps.signing.outputs.signed }}
@@ -195,9 +190,16 @@ jobs:
             exit 1
           fi
           suffix=''
-          if [[ "$SIGNED" != true ]]; then suffix='-debug'; fi
+          if [[ "$SIGNED" != true ]]; then suffix='-test-signed'; fi
           mkdir -p installers
           cp "${packages[0]}" "installers/ScanKick_${APP_VERSION}_android-arm64${suffix}.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "${packages[0]}"
+          badging="$("$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "${packages[0]}")"
+          if [[ "$badging" == *application-debuggable* ]]; then
+            echo 'Expected a non-debuggable release APK'
+            exit 1
+          fi
+          ls -lh installers/*.apk
       - uses: actions/upload-artifact@v4
         with:
           name: installer-android-arm64

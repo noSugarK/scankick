@@ -178,7 +178,7 @@ Android 开发入口为 `cargo tauri android dev`，构建入口为 `cargo tauri
 | Windows x64 | `ScanKick_0.1.0_windows-x64.exe`、`ScanKick_0.1.0_windows-x64.msi` |
 | macOS Intel / Apple Silicon 通用版 | `ScanKick_0.1.0_macos-universal.dmg` |
 | Linux x64 | `ScanKick_0.1.0_linux-x64.deb`、`ScanKick_0.1.0_linux-x64.rpm` |
-| Android ARM64 | `ScanKick_0.1.0_android-arm64.apk`，未配置签名时带 `-debug` 后缀 |
+| Android ARM64 | `ScanKick_0.1.0_android-arm64.apk`，未配置正式签名时带 `-test-signed` 后缀 |
 
 只上传以上安装包，不上传 AppImage、裸可执行文件、`.app` 目录、AAB 或构建目录。Actions 下载归档保留 14 天；GitHub Release 自带的源码下载链接由 GitHub 自动提供。
 Android SDK/NDK 和安卓工程在 CI 中自动准备，不要求本机预先生成安卓工程；本机 `npm run app:build` 仍只构建当前桌面平台。
@@ -194,7 +194,7 @@ git push origin v0.1.0
 
 MSI 内部版本只接受数字：`bundle.windows.wix.version` 应设为去掉预发布后缀的版本（例如 `0.1.0`），CI 会检查一致性；下载文件名仍保留完整的 `0.1.0-beta.2` 等版本。
 
-Android 默认生成可安装的调试 APK，调试签名随 CI 运行变化，不保证覆盖升级。正式签名请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets（必须全设或全不设）：
+Android 始终使用 Release 优化编译并移除 Rust 调试符号；未配置正式签名时使用测试密钥签名，应用 ID 保留 `.debug` 后缀。测试签名随 CI 运行变化，不保证覆盖升级。正式签名请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets（必须全设或全不设）：
 
 - `ANDROID_KEYSTORE_BASE64`：签名 keystore 文件的 Base64，使用不换行的编码。
 - `ANDROID_KEYSTORE_PASSWORD`：keystore 密码。

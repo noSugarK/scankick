@@ -172,7 +172,7 @@ Installer names include the version, OS, and architecture:
 - Windows: `ScanKick_0.1.0_windows-x64.exe` and `.msi`.
 - macOS Intel / Apple Silicon: `ScanKick_0.1.0_macos-universal.dmg`.
 - Linux: `ScanKick_0.1.0_linux-x64.deb` and `.rpm`.
-- Android: `ScanKick_0.1.0_android-arm64.apk`, with `-debug` before `.apk` when signing secrets are absent.
+- Android: `ScanKick_0.1.0_android-arm64.apk`, with `-test-signed` before `.apk` when production signing secrets are absent.
 
 Only installers are uploaded. No AppImage, raw binaries, `.app` directories, AAB, or build directories are uploaded. Actions artifacts expire after 14 days; GitHub separately provides its automatic source archive links on Releases. CI installs the Android SDK/NDK and initializes the Android project if absent; local `npm run app:build` still builds only the current desktop platform.
 
@@ -187,7 +187,7 @@ Tags such as `v0.1.0-beta.1` create prereleases and must also match the applicat
 
 MSI requires a numeric internal version: keep `bundle.windows.wix.version` equal to the application version without its prerelease suffix (for example, `0.1.0`); CI checks this. Download filenames retain the full version, such as `0.1.0-beta.2`.
 
-Android defaults to an installable debug APK. Its CI-generated debug signing key changes between runs, so upgrades are not guaranteed. Configure all four repository Actions secrets to build signed release APKs instead: `ANDROID_KEYSTORE_BASE64` (single-line Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The keystore is written only to runner temporary storage and removed afterward. Windows/macOS publisher signing and Apple notarization are not configured; installation may show OS verification prompts.
+Android always uses an optimized Release build with Rust debug symbols stripped. Without production signing secrets it uses a test key and keeps the `.debug` application ID suffix. The test key changes between CI runs, so upgrades are not guaranteed. Configure all four repository Actions secrets to use production signing instead: `ANDROID_KEYSTORE_BASE64` (single-line Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The production keystore is written only to runner temporary storage and removed afterward. Windows/macOS publisher signing and Apple notarization are not configured; installation may show OS verification prompts.
 
 #### Deploy to GitHub Pages
 

@@ -52,8 +52,8 @@ network.write_text("""<?xml version="1.0" encoding="utf-8"?>
 gradle = app / "build.gradle.kts"
 text = gradle.read_text(encoding="utf-8")
 marker = "// ScanKick CI signing"
-if marker not in text:
-    gradle.write_text(text + """
+gradle.write_text(text.split(marker, 1)[0].rstrip() + """
+
 // ScanKick CI signing
 if (System.getenv("ANDROID_KEYSTORE_PATH") != null) {
     android {
@@ -66,6 +66,13 @@ if (System.getenv("ANDROID_KEYSTORE_PATH") != null) {
             }
         }
         buildTypes.getByName("release").signingConfig = signingConfigs.getByName("release")
+    }
+} else {
+    android {
+        buildTypes.getByName("release").apply {
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".debug"
+        }
     }
 }
 """, encoding="utf-8")

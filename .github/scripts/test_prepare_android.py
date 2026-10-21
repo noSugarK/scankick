@@ -21,7 +21,7 @@ class AndroidConfigTest(unittest.TestCase):
                     manifest = app / "src/main/AndroidManifest.xml"
                     manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick" /></manifest>', encoding="utf-8")
                     gradle = app / "build.gradle.kts"
-                    gradle.write_text('plugins { id("com.android.application") }\n', encoding="utf-8")
+                    gradle.write_text('plugins { id("com.android.application") }\n' + ('// ScanKick CI signing\n// old signing configuration\n' if internet else ''), encoding="utf-8")
                     activity = app / "src/main/java/io/github/nosugark/scankick/MainActivity.kt"
                     activity.parent.mkdir(parents=True)
                     activity.write_text("// Generated default activity\n", encoding="utf-8")
@@ -59,6 +59,9 @@ class AndroidConfigTest(unittest.TestCase):
                     domains = {d.text for d in network.findall("domain-config/domain")}
                     self.assertEqual(domains, {"127.0.0.1", "localhost", "tauri.localhost"})
                     self.assertIn('System.getenv("ANDROID_KEYSTORE_PASSWORD")', gradle.read_text(encoding="utf-8"))
+                    self.assertIn('signingConfig = signingConfigs.getByName("debug")', gradle.read_text(encoding="utf-8"))
+                    self.assertIn('applicationIdSuffix = ".debug"', gradle.read_text(encoding="utf-8"))
+                    self.assertNotIn('old signing configuration', gradle.read_text(encoding="utf-8"))
                 finally:
                     os.chdir(previous)
 
