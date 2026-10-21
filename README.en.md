@@ -185,6 +185,8 @@ git push origin v0.1.0
 
 Tags such as `v0.1.0-beta.1` create prereleases and must also match the application version. Manual dispatch may not appear until the workflow reaches the default branch; pushing a tag pointing to a commit containing the workflow can trigger it beforehand.
 
+MSI requires a numeric internal version: keep `bundle.windows.wix.version` equal to the application version without its prerelease suffix (for example, `0.1.0`); CI checks this. Download filenames retain the full version, such as `0.1.0-beta.2`.
+
 Android defaults to an installable debug APK. Its CI-generated debug signing key changes between runs, so upgrades are not guaranteed. Configure all four repository Actions secrets to build signed release APKs instead: `ANDROID_KEYSTORE_BASE64` (single-line Base64), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`. The keystore is written only to runner temporary storage and removed afterward. Windows/macOS publisher signing and Apple notarization are not configured; installation may show OS verification prompts.
 
 #### Deploy to GitHub Pages

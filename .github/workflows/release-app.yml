@@ -42,6 +42,7 @@ jobs:
           const cargo = fs.readFileSync('src-tauri/Cargo.toml', 'utf8').match(/^version\s*=\s*"([^"]+)"/m)?.[1];
           assert.equal(tauri.version, version, 'Tauri and package.json versions must match');
           assert.equal(cargo, version, 'Cargo and package.json versions must match');
+          assert.equal(tauri.bundle.windows.wix.version, version.split('-')[0], 'MSI version must match the numeric application version');
           if (process.env.GITHUB_REF_TYPE === 'tag') {
             assert.equal(process.env.GITHUB_REF_NAME, `v${version}`, 'Tag must match the application version');
           }

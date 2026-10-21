@@ -1,6 +1,6 @@
 [package]
 name = "scankick"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 description = "ScanKick desktop and mobile app"
 repository = "https://github.com/noSugarK/scankick"
 edition = "2021"

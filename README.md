@@ -192,6 +192,8 @@ git push origin v0.1.0
 
 `v0.1.0-beta.1` 等带预发布版本的标签会创建预发布版本，应用版本也需同步修改。新工作流尚未进入默认分支时，网页可能不显示手动运行入口；向包含该工作流的提交推送标签仍可触发。
 
+MSI 内部版本只接受数字：`bundle.windows.wix.version` 应设为去掉预发布后缀的版本（例如 `0.1.0`），CI 会检查一致性；下载文件名仍保留完整的 `0.1.0-beta.2` 等版本。
+
 Android 默认生成可安装的调试 APK，调试签名随 CI 运行变化，不保证覆盖升级。正式签名请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets（必须全设或全不设）：
 
 - `ANDROID_KEYSTORE_BASE64`：签名 keystore 文件的 Base64，使用不换行的编码。
