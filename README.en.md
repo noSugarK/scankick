@@ -95,7 +95,7 @@ Installers are on [GitHub Releases](https://github.com/noSugarK/scankick/release
 | macOS | `.dmg` | Universal (Intel and Apple Silicon), macOS 10.13+ |
 | Linux | `.deb` / `.rpm` | x64, built on Ubuntu 22.04; needs glibc 2.35+ and WebKitGTK 4.1 |
 | Android | `.apk` | ARM64, Android 7.0+ |
-| iOS / iPadOS | Not available | Open the website in Safari to scan in and play |
+| iOS / iPadOS | Not available | Scan with the system camera and play in the browser; for fullscreen, use Share → Add to Home Screen and open it from the icon |
 
 - **Online mode**: shares the public lobby and rooms with the website. The QR code points to the website, so players join in their browser.
 - **Local network mode**: the app runs an HTTP/WebSocket server on the device, no internet needed. Players join from a browser on the same Wi-Fi or hotspot.
@@ -229,7 +229,7 @@ Android always uses an optimized Release build with Rust debug symbols stripped.
 
 - The big-screen page must stay in the foreground; browsers pause timers in background tabs and the match stops.
 - Public MQTT topics are open to anyone, which is fine for parties. A room password keeps strangers in the lobby out but not someone listening on the broker (the password travels in plain text in the hello message). For serious use, switch to an authenticated EMQX Serverless or self-hosted broker.
-- iOS Safari supports neither vibration nor web fullscreen.
+- iOS / iPadOS support neither vibration nor web fullscreen. Chrome, Edge, and other iOS browsers use Safari's engine too, so switching browsers does not help; adding the site to the Home Screen and opening it from the icon gives fullscreen.
 
 </details>
 

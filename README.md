@@ -95,7 +95,7 @@
 | macOS | `.dmg` | Intel 与 Apple Silicon 通用，macOS 10.13+ |
 | Linux | `.deb` / `.rpm` | x64，在 Ubuntu 22.04 上构建，需要 glibc 2.35+ 与 WebKitGTK 4.1 |
 | Android | `.apk` | ARM64，Android 7.0+ |
-| iOS / iPadOS | 暂不提供 | 用 Safari 打开网页即可扫码当手柄 |
+| iOS / iPadOS | 暂不提供 | 用系统相机扫码，在浏览器里当手柄；想全屏可「分享 → 添加到主屏幕」后从图标打开 |
 
 - **在线模式**：与网页版共用公开大厅和房间，二维码指向网页版，玩家扫码后直接在浏览器里加入。
 - **局域网模式**：本机启动 HTTP/WebSocket 服务，无需外网；玩家连同一 Wi-Fi 或热点，用浏览器加入。
@@ -243,7 +243,7 @@ Android 始终使用 Release 优化编译并移除 Rust 调试符号；未配置
 
 - 大屏页面必须保持在前台，切到后台浏览器会暂停计时器，比赛会停住。
 - 公共 MQTT 主题是公开的，适合聚会娱乐。房间密码只能挡住大厅里的陌生人，挡不住监听 broker 的人（密码随 hello 明文发送）；正式使用建议换成带鉴权的 EMQX Serverless 或自建 broker。
-- iOS Safari 不支持震动和网页全屏。
+- iOS / iPadOS 不支持震动和网页全屏。iOS 上的 Chrome、Edge 等浏览器同样使用 Safari 内核，换浏览器无法解决；添加到主屏幕后从图标打开可以全屏。
 
 </details>
 
