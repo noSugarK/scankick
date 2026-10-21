@@ -4,6 +4,12 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 app = Path("src-tauri/gen/android/app")
+# Gradle's default 10-second download timeout is too short for CI network stalls.
+wrapper = app.parent / "gradle/wrapper/gradle-wrapper.properties"
+properties = wrapper.read_text(encoding="utf-8").splitlines()
+properties = [line for line in properties if not line.startswith("networkTimeout=")]
+wrapper.write_text("\n".join([*properties, "networkTimeout=120000", ""]), encoding="utf-8")
+
 android = "http://schemas.android.com/apk/res/android"
 ET.register_namespace("android", android)
 manifest = app / "src/main/AndroidManifest.xml"

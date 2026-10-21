@@ -22,12 +22,19 @@ class AndroidConfigTest(unittest.TestCase):
                     manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick" /></manifest>', encoding="utf-8")
                     gradle = app / "build.gradle.kts"
                     gradle.write_text('plugins { id("com.android.application") }\n', encoding="utf-8")
+                    wrapper = app.parent / "gradle/wrapper/gradle-wrapper.properties"
+                    wrapper.parent.mkdir(parents=True)
+                    distribution = "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14.3-bin.zip\n"
+                    wrapper.write_text(distribution + ("networkTimeout=10000\n" if internet else ""), encoding="utf-8")
                     runpy.run_path(str(script))
                     first_manifest = manifest.read_bytes()
                     first_gradle = gradle.read_bytes()
+                    first_wrapper = wrapper.read_bytes()
                     runpy.run_path(str(script))
                     self.assertEqual(manifest.read_bytes(), first_manifest)
                     self.assertEqual(gradle.read_bytes(), first_gradle)
+                    self.assertEqual(wrapper.read_bytes(), first_wrapper)
+                    self.assertEqual(wrapper.read_text(encoding="utf-8"), distribution + "networkTimeout=120000\n")
                     root = ET.parse(manifest).getroot()
                     permissions = [p.get(f"{{{namespace}}}name") for p in root.findall("uses-permission")]
                     self.assertEqual(permissions.count("android.permission.INTERNET"), 1)
