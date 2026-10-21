@@ -1,4 +1,4 @@
-import { isLanPage, lanSession } from '../net/lan-session';
+import { isLanPage, isNativeApp, lanSession } from '../net/lan-session';
 
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 
@@ -66,8 +66,8 @@ export function canFullscreen() {
 
 export function isFullscreen() {
   const d = document as any;
-  // 从主屏幕图标启动（standalone）也视为全屏
-  return !!(d.fullscreenElement || d.webkitFullscreenElement) || matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+  // 从主屏幕图标启动（standalone）或安卓原生 App（自身沉浸式）也视为全屏
+  return (isNativeApp() && /Android/.test(navigator.userAgent)) || !!(d.fullscreenElement || d.webkitFullscreenElement) || matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone === true;
 }
 
 /** 必须在 click/touchend/keydown 等用户手势内调用（触屏的 pointerdown 不算手势） */

@@ -19,7 +19,7 @@ class AndroidConfigTest(unittest.TestCase):
                     (app / "src/main").mkdir(parents=True)
                     permission = '<uses-permission android:name="android.permission.INTERNET" />' if internet else ''
                     manifest = app / "src/main/AndroidManifest.xml"
-                    manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick" /></manifest>', encoding="utf-8")
+                    manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick"><activity android:name=".MainActivity" /></application></manifest>', encoding="utf-8")
                     gradle = app / "build.gradle.kts"
                     gradle.write_text('plugins { id("com.android.application") }\n' + ('// ScanKick CI signing\n// old signing configuration\n' if internet else ''), encoding="utf-8")
                     activity = app / "src/main/java/io/github/nosugark/scankick/MainActivity.kt"
@@ -54,6 +54,7 @@ class AndroidConfigTest(unittest.TestCase):
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "ScanKick")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}icon"), "@mipmap/ic_launcher")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}roundIcon"), "@mipmap/ic_launcher")
+                    self.assertEqual(root.find("application/activity").get(f"{{{namespace}}}screenOrientation"), "fullSensor")
                     network = ET.parse(app / "src/main/res/xml/scankick_network_security.xml").getroot()
                     self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "false")
                     domains = {d.text for d in network.findall("domain-config/domain")}

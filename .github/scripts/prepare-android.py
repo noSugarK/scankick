@@ -32,6 +32,9 @@ if application is None:
 application.set(f"{{{android}}}networkSecurityConfig", "@xml/scankick_network_security")
 application.set(f"{{{android}}}icon", "@mipmap/ic_launcher")
 application.set(f"{{{android}}}roundIcon", "@mipmap/ic_launcher")
+# The controller needs landscape even when the phone has rotation locked.
+for activity_tag in application.findall("activity"):
+    activity_tag.set(f"{{{android}}}screenOrientation", "fullSensor")
 tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
 # The native game connects only to the loopback WebSocket. Public online services
