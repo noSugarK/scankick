@@ -145,6 +145,7 @@ export class HostGame {
         if (!s || s.cid !== cid) return;
         s.cid = null;
         s.info.online = false;
+        this.votes[s.info.team].delete(s.info.id);
         s.offlineAt = performance.now();
         this.sim.setInput(s.info.id, { jx: 0, jy: 0, btn: 0 });
         this.sim.inactive.add(s.info.id);
@@ -469,6 +470,7 @@ export class HostGame {
     if (!s) return;
     switch (msg.t) {
       case 'team': {
+        if (this.inMatch() || (msg.team !== 0 && msg.team !== 1)) return;
         const team: Team = msg.team === 1 ? 1 : 0;
         if (team !== s.info.team && this.humans(team).length < CONFIG.maxPerTeam) {
           this.votes[s.info.team].delete(pid);
@@ -510,7 +512,7 @@ export class HostGame {
 
   /** 投降投票：本队在线真人严格过半同意即判负；再次点击撤回 */
   private vote(s: Slot) {
-    if (!this.inMatch()) return;
+    if (!this.inMatch() || !s.info.online || s.info.bot) return;
     const team = s.info.team;
     const set = this.votes[team];
     const cancel = set.has(s.info.id);
@@ -704,7 +706,7 @@ export class HostGame {
     let mvp = -1;
     let best = 0.99;
     for (const st of list) {
-      if (statScore(st) > best) {
+      if ((st.g > 0 || st.a > 0 || st.t > 0) && statScore(st) > best) {
         best = statScore(st);
         mvp = st.id;
       }

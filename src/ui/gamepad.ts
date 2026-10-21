@@ -46,6 +46,7 @@ export class Gamepad {
   private touchBtn = 0;
   private keyBtn = 0;
   private keys = new Set<string>();
+  private pointers = new Map<HTMLElement, Set<number>>();
   private R = 56;
 
   constructor(root: HTMLElement) {
@@ -62,7 +63,32 @@ export class Gamepad {
     this.bindJoystick();
     root.querySelectorAll<HTMLElement>('.pad-btn').forEach((el) => this.bindButton(el));
     this.bindKeyboard();
+    window.addEventListener('blur', () => this.reset());
+    window.addEventListener('pagehide', () => this.reset());
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.reset();
+    });
     this.restBase();
+  }
+
+  /** 丢失焦点或连接时释放所有输入，恢复后必须重新操作。 */
+  reset() {
+    const joyId = this.joyId;
+    this.joyId = null;
+    this.keys.clear();
+    this.keyBtn = this.touchBtn = 0;
+    this.bDown = 0;
+    this.input.jx = this.input.jy = this.input.btn = 0;
+    this.restBase();
+    if (joyId !== null && this.zone.hasPointerCapture(joyId)) this.zone.releasePointerCapture(joyId);
+    for (const [el, ids] of this.pointers) {
+      const captured = [...ids];
+      ids.clear();
+      el.classList.remove('down');
+      for (const id of captured) if (el.hasPointerCapture(id)) el.releasePointerCapture(id);
+    }
+    this.bEl.style.setProperty('--charge', '0');
+    this.onButtons();
   }
 
   private restBase() {
@@ -100,6 +126,7 @@ export class Gamepad {
     };
     z.addEventListener('pointerup', end);
     z.addEventListener('pointercancel', end);
+    z.addEventListener('lostpointercapture', end);
   }
 
   private moveJoy(cx: number, cy: number) {
@@ -127,6 +154,7 @@ export class Gamepad {
     const bit = Number(el.dataset.bit);
     if (bit === BTN_B) this.bEl = el;
     const ids = new Set<number>();
+    this.pointers.set(el, ids);
     el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       el.setPointerCapture(e.pointerId);
@@ -146,6 +174,7 @@ export class Gamepad {
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
+    el.addEventListener('lostpointercapture', up);
   }
 
   private press(bit: number) {
@@ -170,11 +199,6 @@ export class Gamepad {
       this.keys.delete(e.code);
       const bit = KEY_BITS[e.code];
       if (bit && ![...this.keys].some((k) => KEY_BITS[k] === bit)) this.keyBtn &= ~bit;
-      this.syncKeys();
-    });
-    window.addEventListener('blur', () => {
-      this.keys.clear();
-      this.keyBtn = 0;
       this.syncKeys();
     });
   }

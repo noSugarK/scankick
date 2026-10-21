@@ -229,7 +229,10 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     net.onState = (s) => {
       setStatus(s);
       buf.delay = s === 'relay' ? 140 : 60;
-      if (s === 'lost') buf.reset();
+      if (s === 'lost' || s === 'rejected') {
+        pad.reset();
+        buf.reset();
+      }
     };
     net.onReject = (r) => {
       toast(t(`reject.${r}`, { n: CONFIG.maxPerTeam * 2 }), 5000);
@@ -364,7 +367,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
           manage: isOwner,
           addAi: isOwner && !inMatch,
           slots: false,
-          joinable: watching ? hasRoom(team) : !!me && me.team !== team,
+          joinable: watching ? hasRoom(team) : !inMatch && !!me && me.team !== team,
           joinLabel: watching ? t('play.joinTeam') : undefined,
         });
       html += `<div class="tcards">${card(0)}${card(1)}</div>`;

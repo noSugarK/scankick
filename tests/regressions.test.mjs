@@ -126,6 +126,82 @@ function match() {
   return sim;
 }
 
+function joinPlayer(host, cid, team = 0) {
+  assert.equal(host.net.cb.onHello(cid, { name: cid, token: cid, team }), null);
+  return host.rosterMsg().players.find((p) => p.name === cid).id;
+}
+
+test('换队仅在大厅和结算开放，比赛各阶段及非法队伍值均被主机拒绝', () => {
+  const host = new HostGame('TEAMS');
+  try {
+    const pid = joinPlayer(host, 'player');
+    const team = () => host.rosterMsg().players.find((p) => p.id === pid).team;
+    host.command(pid, { t: 'team', team: 1 });
+    assert.equal(team(), 1);
+    for (const invalid of [undefined, null, '0', 2, -1]) {
+      host.command(pid, { t: 'team', team: invalid });
+      assert.equal(team(), 1);
+    }
+    host.startMatch();
+    for (const phase of [Phase.Ready, Phase.Playing, Phase.Goal]) {
+      host.sim.phase = phase;
+      host.command(pid, { t: 'team', team: 0 });
+      assert.equal(team(), 1);
+      assert.equal(host.sim.players.get(pid).team, 1);
+    }
+    host.endMatch();
+    host.command(pid, { t: 'team', team: 0 });
+    assert.equal(team(), 0);
+  } finally { host.close(); }
+});
+
+test('投降票在掉线时撤销，离线者和 AI 不可投票，重连需重新同意', () => {
+  const host = new HostGame('VOTES');
+  try {
+    const a = joinPlayer(host, 'a');
+    const b = joinPlayer(host, 'b');
+    const c = joinPlayer(host, 'c');
+    host.startMatch();
+    host.command(a, { t: 'surrender' });
+    host.net.cb.onLeave('a');
+    assert.deepEqual(host.rosterMsg().votes[0], []);
+    assert.equal(host.rosterMsg().need[0], 2);
+    host.command(a, { t: 'surrender' });
+    const bot = host.rosterMsg().players.find((p) => p.bot);
+    host.command(bot.id, { t: 'surrender' });
+    assert.deepEqual(host.rosterMsg().votes, [[], []]);
+    host.command(b, { t: 'surrender' });
+    assert.equal(host.sim.phase, Phase.Ready, '两位在线玩家中仅一票不能判负');
+    assert.equal(host.net.cb.onHello('a2', { name: 'a', token: 'a', team: 0 }), null);
+    assert.deepEqual(host.rosterMsg().votes[0], [b], '重连不能恢复旧票');
+    host.command(b, { t: 'surrender' });
+    assert.deepEqual(host.rosterMsg().votes[0], [], '再次点击可撤票');
+    host.command(a, { t: 'surrender' });
+    host.command(c, { t: 'surrender' });
+    assert.equal(host.sim.phase, Phase.Ended);
+    host.handleEvents();
+    assert.equal(host.endInfo.reason, 'surrender');
+    assert.equal(host.endInfo.winner, 1);
+  } finally { host.close(); }
+});
+
+test('MVP 必须有进球、助攻或铲断，纯射门高分也不能获选', () => {
+  for (const contribution of [null, 'g', 'a', 't']) {
+    const host = new HostGame('MVP');
+    try {
+      const shooter = joinPlayer(host, 'shooter');
+      const contributor = joinPlayer(host, 'contributor', 1);
+      host.startMatch();
+      host.stats.get(shooter).s = 20;
+      if (contribution) host.stats.get(contributor)[contribution] = 1;
+      host.endMatch();
+      host.handleEvents();
+      assert.equal(host.endInfo.mvp, contribution ? contributor : -1);
+      assert.equal(host.endInfo.stats.find((p) => p.id === shooter).s, 20);
+    } finally { host.close(); }
+  }
+});
+
 test('高速球从两侧球门外越过底线时反弹，不夹入球网或计分', () => {
   for (const side of [-1, 1]) for (const y of [-200, -100, 100, 200]) {
     const sim = match();
@@ -220,19 +296,27 @@ test('直连输入走可靠有序通道，中继输入请求 QoS 1', () => {
 });
 
 class Element extends EventTarget {
+  captures = new Set();
   constructor(bit = 0) {
     super();
     this.dataset = { bit: String(bit) };
     this.style = { setProperty() {} };
     this.classList = { add() {}, remove() {} };
   }
-  setPointerCapture() {}
+  setPointerCapture(id) { this.captures.add(id); }
+  hasPointerCapture(id) { return this.captures.has(id); }
+  releasePointerCapture(id) {
+    if (this.captures.delete(id)) this.dispatchEvent(Object.assign(new Event('lostpointercapture'), { pointerId: id }));
+  }
+  getBoundingClientRect() { return { left: 0, top: 0, right: 400, bottom: 300 }; }
 }
 
 test('触屏和键盘短按在两次采样之间仍立即发出，并在模拟中执行', () => {
   const originalWindow = globalThis.window;
   const originalInput = globalThis.HTMLInputElement;
+  const originalDocument = globalThis.document;
   globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
   globalThis.HTMLInputElement = class {};
   try {
     for (const [bit, code] of [[BTN_A, 'KeyJ'], [BTN_B, 'KeyK'], [BTN_Y, 'KeyI']]) {
@@ -267,7 +351,59 @@ test('触屏和键盘短按在两次采样之间仍立即发出，并在模拟�
   } finally {
     globalThis.window = originalWindow;
     globalThis.HTMLInputElement = originalInput;
+    globalThis.document = originalDocument;
   }
+});
+
+test('失焦、后台、离开页面和断线重置会清空混合输入，旧指针事件不会污染新操作', () => {
+  const original = { window: globalThis.window, document: globalThis.document, HTMLInputElement: globalThis.HTMLInputElement };
+  try {
+    globalThis.HTMLInputElement = class {};
+    for (const reason of ['blur', 'hidden', 'pagehide', 'disconnect']) {
+      globalThis.window = new EventTarget();
+      globalThis.document = Object.assign(new EventTarget(), { visibilityState: 'visible' });
+      const els = new Map(['.joy-zone', '.joy-base', '.joy-knob'].map((key) => [key, new Element()]));
+      const buttons = [1, 2, 4, 8].map((bit) => new Element(bit));
+      const pad = new Gamepad({ insertAdjacentHTML() {}, querySelector: (key) => els.get(key), querySelectorAll: () => buttons });
+      const fire = (target, type, props = {}) => {
+        const event = Object.assign(new Event(type, { cancelable: true }), props);
+        target.dispatchEvent(event);
+      };
+      const zone = els.get('.joy-zone');
+      const shot = buttons.find((el) => Number(el.dataset.bit) === BTN_B);
+      fire(window, 'keydown', { code: 'KeyD' });
+      fire(window, 'keydown', { code: 'KeyL' });
+      fire(zone, 'pointerdown', { pointerId: 1, clientX: 150, clientY: 150 });
+      fire(zone, 'pointermove', { pointerId: 1, clientX: 210, clientY: 150 });
+      fire(shot, 'pointerdown', { pointerId: 2 });
+      assert.equal(pad.input.jx, 1);
+      assert.equal(pad.input.btn, BTN_X | BTN_B);
+      const sent = [];
+      pad.onButtons = () => sent.push({ ...pad.input });
+      if (reason === 'disconnect') pad.reset();
+      else if (reason === 'hidden') {
+        document.visibilityState = 'hidden';
+        fire(document, 'visibilitychange');
+      } else fire(window, reason);
+      assert.deepEqual(sent.at(-1), { jx: 0, jy: 0, btn: 0 });
+      assert.equal(zone.hasPointerCapture(1), false);
+      assert.equal(shot.hasPointerCapture(2), false);
+      fire(zone, 'pointermove', { pointerId: 1, clientX: 250, clientY: 150 });
+      assert.equal(pad.input.jx, 0);
+      fire(shot, 'pointerdown', { pointerId: 3 });
+      fire(shot, 'pointerup', { pointerId: 2 });
+      assert.equal(pad.input.btn, BTN_B);
+      fire(shot, 'lostpointercapture', { pointerId: 3 });
+      assert.equal(pad.input.btn, 0, '旧指针不阻止新按键释放');
+      fire(window, 'keyup', { code: 'KeyL' });
+      assert.equal(pad.input.jx, 0, '旧键盘移动状态已清空');
+      fire(zone, 'pointerdown', { pointerId: 4, clientX: 150, clientY: 150 });
+      fire(zone, 'pointermove', { pointerId: 4, clientX: 210, clientY: 150 });
+      assert.equal(pad.input.jx, 1);
+      fire(zone, 'lostpointercapture', { pointerId: 4 });
+      assert.equal(pad.input.jx, 0);
+    }
+  } finally { Object.assign(globalThis, original); }
 });
 
 test('准备阶段不会把排队的短按带进开球，异常输入队列有上限', () => {
