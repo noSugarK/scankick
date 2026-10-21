@@ -501,14 +501,28 @@ h1 {
   z-index: 5;
 }
 .network-mode {
-  margin-bottom: 14px;
+  width: fit-content;
+  margin: 0 auto 14px;
+  padding: 3px;
+  gap: 0;
+  border-radius: 999px;
+  background: var(--s-tab);
 }
-.network-mode button {
-  flex: 1;
+.site .network-mode button {
+  border: 0;
+  border-radius: 999px;
+  padding: 6px 18px;
+  white-space: nowrap;
+  background: transparent;
+  color: var(--s-mu);
+  font-size: 13px;
 }
 .site .network-mode button.on {
   background: var(--s-ac);
   color: var(--s-acfg);
+}
+.site.app-home .scan-btn {
+  width: 100%;
 }
 .site.app-home .home-card {
   display: block;
