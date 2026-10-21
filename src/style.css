@@ -769,6 +769,16 @@ h1 {
   text-decoration: none;
   font-size: 14px;
 }
+.dl-pop a span {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dl-pop a .ico {
+  width: 16px;
+  height: 16px;
+  color: var(--s-mu);
+}
 .dl-pop a:hover {
   background: var(--s-tab);
 }
