@@ -42,9 +42,9 @@ network.write_text("""<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
-        <domain>127.0.0.1</domain>
-        <domain>localhost</domain>
-        <domain>tauri.localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">tauri.localhost</domain>
     </domain-config>
 </network-security-config>
 """, encoding="utf-8")

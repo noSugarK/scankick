@@ -58,6 +58,7 @@ class AndroidConfigTest(unittest.TestCase):
                     self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "false")
                     domains = {d.text for d in network.findall("domain-config/domain")}
                     self.assertEqual(domains, {"127.0.0.1", "localhost", "tauri.localhost"})
+                    self.assertTrue(all(d.get("includeSubdomains") == "false" for d in network.findall("domain-config/domain")))
                     self.assertIn('System.getenv("ANDROID_KEYSTORE_PASSWORD")', gradle.read_text(encoding="utf-8"))
                     self.assertIn('signingConfig = signingConfigs.getByName("debug")', gradle.read_text(encoding="utf-8"))
                     self.assertIn('applicationIdSuffix = ".debug"', gradle.read_text(encoding="utf-8"))
