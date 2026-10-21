@@ -1,9 +1,17 @@
 """Configure the generated Tauri Android project for local hosting and signing."""
 
 from pathlib import Path
+import shutil
 import xml.etree.ElementTree as ET
 
 app = Path("src-tauri/gen/android/app")
+tauri = Path(__file__).resolve().parents[2] / "src-tauri"
+activity = app / "src/main/java/io/github/nosugark/scankick/MainActivity.kt"
+activity.parent.mkdir(parents=True, exist_ok=True)
+shutil.copyfile(tauri / "android/MainActivity.kt", activity)
+# Android init creates its own launcher resources instead of using desktop icons.
+shutil.copytree(tauri / "icons/android", app / "src/main/res", dirs_exist_ok=True)
+
 # Gradle's default 10-second download timeout is too short for CI network stalls.
 wrapper = app.parent / "gradle/wrapper/gradle-wrapper.properties"
 properties = wrapper.read_text(encoding="utf-8").splitlines()
@@ -22,6 +30,8 @@ application = root.find("application")
 if application is None:
     raise SystemExit("Generated Android manifest is missing <application>")
 application.set(f"{{{android}}}networkSecurityConfig", "@xml/scankick_network_security")
+application.set(f"{{{android}}}icon", "@mipmap/ic_launcher")
+application.set(f"{{{android}}}roundIcon", "@mipmap/ic_launcher")
 tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
 # The native game connects only to the loopback WebSocket. Public online services

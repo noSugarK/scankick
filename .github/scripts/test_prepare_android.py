@@ -22,6 +22,12 @@ class AndroidConfigTest(unittest.TestCase):
                     manifest.write_text(f'<manifest xmlns:android="{namespace}">{permission}<uses-permission android:name="android.permission.VIBRATE"/><application android:label="ScanKick" /></manifest>', encoding="utf-8")
                     gradle = app / "build.gradle.kts"
                     gradle.write_text('plugins { id("com.android.application") }\n', encoding="utf-8")
+                    activity = app / "src/main/java/io/github/nosugark/scankick/MainActivity.kt"
+                    activity.parent.mkdir(parents=True)
+                    activity.write_text("// Generated default activity\n", encoding="utf-8")
+                    launcher = app / "src/main/res/mipmap-mdpi/ic_launcher.png"
+                    launcher.parent.mkdir(parents=True)
+                    launcher.write_bytes(b"default launcher")
                     wrapper = app.parent / "gradle/wrapper/gradle-wrapper.properties"
                     wrapper.parent.mkdir(parents=True)
                     distribution = "distributionUrl=https\\://services.gradle.org/distributions/gradle-8.14.3-bin.zip\n"
@@ -30,16 +36,24 @@ class AndroidConfigTest(unittest.TestCase):
                     first_manifest = manifest.read_bytes()
                     first_gradle = gradle.read_bytes()
                     first_wrapper = wrapper.read_bytes()
+                    first_activity = activity.read_bytes()
                     runpy.run_path(str(script))
                     self.assertEqual(manifest.read_bytes(), first_manifest)
                     self.assertEqual(gradle.read_bytes(), first_gradle)
                     self.assertEqual(wrapper.read_bytes(), first_wrapper)
+                    self.assertEqual(activity.read_bytes(), first_activity)
+                    icons = script.parents[2] / "src-tauri/icons/android"
+                    for source in icons.rglob("*"):
+                        if source.is_file():
+                            self.assertEqual((app / "src/main/res" / source.relative_to(icons)).read_bytes(), source.read_bytes())
                     self.assertEqual(wrapper.read_text(encoding="utf-8"), distribution + "networkTimeout=120000\n")
                     root = ET.parse(manifest).getroot()
                     permissions = [p.get(f"{{{namespace}}}name") for p in root.findall("uses-permission")]
                     self.assertEqual(permissions.count("android.permission.INTERNET"), 1)
                     self.assertIn("android.permission.VIBRATE", permissions)
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "ScanKick")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}icon"), "@mipmap/ic_launcher")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}roundIcon"), "@mipmap/ic_launcher")
                     network = ET.parse(app / "src/main/res/xml/scankick_network_security.xml").getroot()
                     self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "false")
                     domains = {d.text for d in network.findall("domain-config/domain")}
