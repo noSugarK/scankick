@@ -43,6 +43,17 @@ async function route() {
   } else mountHome(app);
 }
 
+// 安卓 App 由原生层提供状态栏/刘海的安全区（WebView 的 env(safe-area-inset-*) 不可靠）
+const safeArea = (window as { ScanKickSafeArea?: { get(): string } }).ScanKickSafeArea;
+if (safeArea) {
+  const apply = () => {
+    const [top, right, bottom, left] = JSON.parse(safeArea.get()) as number[];
+    Object.entries({ top, right, bottom, left }).forEach(([k, v]) => document.documentElement.style.setProperty(`--safe-${k}`, `${v}px`));
+  };
+  apply();
+  window.addEventListener('safeareachange', apply);
+}
+
 // 原生 App 里的外部链接交给系统浏览器打开，不在应用内跳走
 if (isNativeApp()) {
   document.addEventListener('click', (e) => {
