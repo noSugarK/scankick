@@ -7,7 +7,10 @@ import { isPin, normalizeCode } from './util';
 export function joinHashFromQr(text: string): string | null {
   const m = text.match(/#\/join\/([A-Za-z0-9]{4,8})(?:\?([^#\s]*))?/);
   if (m) {
-    const pin = new URLSearchParams(m[2] ?? '').get('pin');
+    const query = new URLSearchParams(m[2] ?? '');
+    // Local QR codes must open the host's origin, not this site's online room.
+    if (query.get('lan') === '1') return null;
+    const pin = query.get('pin');
     return `#/join/${normalizeCode(m[1])}${isPin(pin) ? `?pin=${pin}` : ''}`;
   }
   const code = text.trim();

@@ -21,6 +21,7 @@ export function playerTag(p: PlayerInfo): string {
   if (p.bot) return 'AI';
   if (!p.online) return t('status.offline');
   if (p.link === 'local') return '';
+  if (p.link === 'lan') return t('status.lan');
   return t(p.link === 'p2p' ? 'status.p2p' : 'status.relay');
 }
 

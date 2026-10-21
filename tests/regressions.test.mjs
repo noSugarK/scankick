@@ -31,8 +31,95 @@ const { encodeInput, decodeInput, newerInput, encodeSnapshot, decodeSnapshot } =
 const { ClientNet } = await import('../src/net/client.ts');
 const { HostGame } = await import('../src/game/host-game.ts');
 const { Gamepad } = await import('../src/ui/gamepad.ts');
+const { LanHost } = await import('../src/net/lan-host.ts');
+const { LanClient } = await import('../src/net/lan-client.ts');
+const { joinHashFromQr } = await import('../src/ui/scan.ts');
 
 const dt = 1 / 60;
+
+class TestSocket {
+  static OPEN = 1;
+  static sockets = [];
+  readyState = 0;
+  bufferedAmount = 0;
+  sent = [];
+  constructor(url) { this.url = url; TestSocket.sockets.push(this); }
+  open() { this.readyState = 1; this.onopen?.(); }
+  receive(data) { this.onmessage?.({ data: typeof data === 'object' && !(data instanceof ArrayBuffer) ? JSON.stringify(data) : data }); }
+  send(data) { this.sent.push(typeof data === 'string' ? JSON.parse(data) : data.slice()); }
+  close() { this.readyState = 3; this.onclose?.(); }
+}
+
+test('局域网使用现有房间密码、输入与快照，拒绝未加入者并按 token 重连', async () => {
+  const original = { window: globalThis.window, WebSocket: globalThis.WebSocket };
+  globalThis.window = { setTimeout };
+  globalThis.WebSocket = TestSocket;
+  let host;
+  try {
+    host = new HostGame('ABCDE', { listed: false, mode: 'lan', pin: '1234' }, (_room, cb) => new LanHost({ port: 9000, key: 'secret' }, cb));
+    assert.equal(host.net.signal, undefined, '局域网主机不创建 MQTT 信令');
+    const pending = host.net.start();
+    const ws = TestSocket.sockets.at(-1);
+    ws.open(); await pending;
+    ws.receive({ cid: 1, data: { t: 'hello', token: 'player', name: 'P', team: 0 } });
+    assert.equal(ws.sent.at(-1).data.reason, 'pinNeed');
+    ws.receive({ cid: 1, data: { t: 'hello', token: 'player', name: 'P', team: 0, pin: '1234' } });
+    assert.ok(ws.sent.some((m) => m.cid === 1 && m.data?.t === 'welcome'));
+    assert.equal(host.rosterMsg().players.find((p) => !p.bot).link, 'lan');
+    const player = [...host.sim.players.values()].find((p) => !host.rosterMsg().players.find((info) => info.id === p.id)?.bot);
+    const packet = (cid, input) => {
+      const bytes = new Uint8Array(input.length + 4);
+      new DataView(bytes.buffer).setUint32(0, cid, true); bytes.set(input, 4);
+      return bytes.buffer;
+    };
+    ws.receive(packet(99, encodeInput(1, { jx: 1, jy: 0, btn: BTN_A })));
+    assert.equal(player.input.btn, 0, '未加入的连接不能操作球员');
+    ws.receive(packet(1, encodeInput(10, { jx: 1, jy: 0, btn: BTN_A })));
+    assert.equal(player.input.btn, BTN_A);
+    ws.receive({ cid: 1, event: 'leave' });
+    assert.ok(host.sim.inactive.has(player.id));
+    ws.receive({ cid: 2, data: { t: 'hello', token: 'player', name: 'P', team: 0, pin: '1234' } });
+    assert.equal(host.rosterMsg().players.filter((p) => !p.bot).length, 1);
+    ws.receive(packet(2, encodeInput(0, { jx: 0, jy: 1, btn: BTN_B })));
+    assert.equal(player.input.btn, BTN_B, '重连后接受新的输入序号');
+    host.net.broadcastFast(encodeSnapshot(host.sim.snapshot()));
+    const snapshot = ws.sent.at(-1);
+    assert.equal(new DataView(snapshot.buffer).getUint32(0, true), 2);
+    assert.ok(decodeSnapshot(snapshot.subarray(4)));
+  } finally {
+    host?.close();
+    Object.assign(globalThis, original);
+  }
+});
+
+test('局域网玩家通过同源 WebSocket 加入并停止重连，局域网二维码不误入在线房间', async () => {
+  const original = { window: globalThis.window, WebSocket: globalThis.WebSocket, location: globalThis.location };
+  globalThis.window = { setTimeout };
+  globalThis.WebSocket = TestSocket;
+  globalThis.location = { origin: 'http://192.168.1.2:9000' };
+  const client = new LanClient('ABCDE', { token: 'player', name: 'P', team: 'auto' });
+  try {
+    await client.start();
+    const ws = TestSocket.sockets.at(-1);
+    assert.equal(ws.url, 'ws://192.168.1.2:9000/ws?room=ABCDE');
+    ws.open(); assert.equal(ws.sent.at(-1).t, 'hello');
+    ws.receive({ t: 'welcome', pid: 1 });
+    assert.equal(client.state, 'lan');
+    const input = encodeInput(0, { jx: 1, jy: 0, btn: 0 });
+    client.sendInput(input); assert.deepEqual(ws.sent.at(-1), input);
+    let rejected;
+    client.onReject = (reason) => { rejected = reason; };
+    ws.receive({ t: 'reject', reason: 'kicked' });
+    assert.equal(rejected, 'kicked');
+    assert.equal(client.state, 'rejected');
+    assert.equal(ws.readyState, 3);
+    assert.equal(joinHashFromQr('http://192.168.1.2:9000/#/join/ABCDE?lan=1&pin=1234'), null);
+    assert.equal(joinHashFromQr('https://example.com/#/join/ABCDE?pin=1234'), '#/join/ABCDE?pin=1234');
+  } finally {
+    client.close();
+    Object.assign(globalThis, original);
+  }
+});
 function match() {
   const sim = new Sim();
   sim.phase = Phase.Playing;

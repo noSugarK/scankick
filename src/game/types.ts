@@ -35,7 +35,7 @@ export interface PlayerInfo {
   num: number;
   bot: boolean;
   online: boolean;
-  link: 'p2p' | 'relay' | 'bot' | 'local';
+  link: 'p2p' | 'relay' | 'lan' | 'bot' | 'local';
 }
 
 export interface SnapPlayer {

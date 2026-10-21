@@ -2,7 +2,7 @@ import { CONFIG } from '../config';
 import type { RejectReason, Team } from '../game/types';
 import { Signal, isJson, parseJson } from './signal';
 
-export type ClientState = 'signal' | 'waiting' | 'connecting' | 'p2p' | 'relay' | 'lost' | 'rejected';
+export type ClientState = 'signal' | 'waiting' | 'connecting' | 'p2p' | 'relay' | 'lan' | 'lost' | 'rejected';
 
 export interface JoinInfo {
   token: string;

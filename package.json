@@ -6,6 +6,9 @@
   "scripts": {
     "test": "node --test tests/regressions.test.mjs",
     "dev": "vite --host",
+    "dev:app": "vite --host 127.0.0.1 --port 1420 --mode app --strictPort",
+    "app:dev": "cargo tauri dev",
+    "app:build": "cargo tauri build",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit"

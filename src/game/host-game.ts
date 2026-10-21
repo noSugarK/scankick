@@ -1,5 +1,6 @@
 import { CONFIG } from '../config';
 import { HostNet, type Hello } from '../net/host';
+import type { HostTransport, HostTransportFactory } from '../net/transport';
 import { LOBBY_HEARTBEAT_MS, LobbyPublisher } from '../net/lobby';
 import { decodeInput, encodeSnapshot, newerInput } from '../net/protocol';
 import { t } from '../i18n';
@@ -57,7 +58,7 @@ export const statScore = (p: PlayerStat) => p.g * 3 + p.a * 2 + p.t + p.s * 0.5;
  */
 export class HostGame {
   readonly sim = new Sim();
-  readonly net: HostNet;
+  readonly net: HostTransport;
   readonly settings: Settings = { mode: 0, party: 0, duration: 180, autoFill: true, bots: [0, 0], level: 1 };
   goalText = '';
   endInfo: EndInfo | null = null;
@@ -86,13 +87,15 @@ export class HostGame {
   private kicked = new Set<string>();
   /** 被转让的房主；他在线时优先，掉线时按默认规则临时顺延 */
   private ownerOverride: number | null = null;
-  private readonly lobby: LobbyPublisher;
+  private readonly lobby: LobbyPublisher | null;
 
   constructor(
     readonly room: string,
     readonly opts: RoomOpts = { listed: false },
+    createNet: HostTransportFactory = (room, callbacks) => new HostNet(room, callbacks),
   ) {
-    this.net = new HostNet(room, {
+    this.net = createNet(room, {
+      onStatus: (ok) => this.onStatus(ok, t(ok ? 'status.lan' : 'lan.disconnected')),
       onHello: (cid, h) => this.onHello(cid, h),
       onPeer: (cid) => {
         const pid = this.byCid.get(cid);
@@ -104,7 +107,7 @@ export class HostGame {
           return;
         }
         const s = this.slots.get(pid)!;
-        s.info.link = this.net.linkOf(cid) === 'p2p' ? 'p2p' : 'relay';
+        s.info.link = this.linkOf(cid);
         this.net.sendJson(cid, { t: 'welcome', pid });
         this.sendHistory(cid);
         this.rosterChanged();
@@ -128,7 +131,7 @@ export class HostGame {
       onLink: (cid, mode) => {
         const s = this.slotByCid(cid);
         if (!s) return;
-        s.info.link = mode === 'p2p' ? 'p2p' : 'relay';
+        s.info.link = mode === 'lan' ? 'lan' : mode === 'p2p' ? 'p2p' : 'relay';
         this.rosterChanged();
       },
       onLeave: (cid) => {
@@ -148,7 +151,7 @@ export class HostGame {
         this.rosterChanged();
       },
     });
-    this.lobby = new LobbyPublisher(this.net.signal, opts.listed);
+    this.lobby = this.net.signal ? new LobbyPublisher(this.net.signal, opts.listed) : null;
     this.loadHistory();
   }
 
@@ -163,20 +166,20 @@ export class HostGame {
   }
 
   async start() {
-    this.net.signal.onStatus = (ok) => {
+    if (this.net.signal) this.net.signal.onStatus = (ok) => {
       this.onStatus(ok, t(ok ? 'status.ready' : 'status.reconnecting'));
       if (ok) this.publishInfo(true);
     };
-    window.addEventListener('pagehide', () => this.lobby.clear());
+    window.addEventListener('pagehide', () => this.close(), { once: true });
     this.startLoops();
     this.rosterChanged();
     try {
       await this.net.start();
       this.onStatus(true, t('status.ready'));
       if (this.opts.listed) this.publishInfo(true);
-      else this.lobby.clear();
+      else this.lobby?.clear();
     } catch {
-      this.onStatus(false, t('status.failed'));
+      this.onStatus(false, t(this.opts.mode === 'lan' ? 'lan.startFailed' : 'status.failed'));
     }
   }
 
@@ -184,6 +187,11 @@ export class HostGame {
   private slotByCid(cid: string) {
     const pid = this.byCid.get(cid);
     return pid !== undefined ? this.slots.get(pid) : undefined;
+  }
+
+  private linkOf(cid: string): PlayerInfo['link'] {
+    const link = this.net.linkOf(cid);
+    return link === 'lan' ? 'lan' : link === 'p2p' ? 'p2p' : 'relay';
   }
 
   private humans(team?: Team) {
@@ -278,7 +286,7 @@ export class HostGame {
       return;
     }
     this.watchers.delete(cid);
-    const link = this.net.linkOf(cid) === 'p2p' ? 'p2p' : 'relay';
+    const link = this.linkOf(cid);
     const s = this.addSlot({ name: w.name, team, bot: false, online: true, link }, w.token);
     s.cid = cid;
     this.byCid.set(cid, s.info.id);
@@ -421,7 +429,7 @@ export class HostGame {
   // ---------- 公开大厅 ----------
   /** 内容变化时发布；force 用于心跳刷新时间戳 */
   private publishInfo(force = false) {
-    this.lobby.publish(
+    this.lobby?.publish(
       {
         host: this.slots.get(this.localPid)?.info.name ?? '',
         n: this.humans().filter((s) => s.info.online).length,
@@ -710,7 +718,7 @@ export class HostGame {
   }
 
   close() {
-    this.lobby.clear();
+    this.lobby?.clear();
     this.timers.forEach(clearInterval);
     this.net.close();
   }

@@ -3,18 +3,23 @@ import { LOBBY_STALE_MS, watchLobby, type LobbyInfo } from '../net/lobby';
 import { openScanner } from '../ui/scan';
 import { bindSiteTools, icon, siteFooter, siteTools } from '../ui/site';
 import { HISTORY_KEY, brand, esc, isPin, normalizeCode, store } from '../ui/util';
+import { isLanPage, isNativeApp, stopLan } from '../net/lan-session';
 
 const CODE_LEN = 5;
 type Tab = 'host' | 'join' | 'lobby';
 
 export function mountHome(app: HTMLElement) {
+  const native = isNativeApp();
+  const lan = isLanPage() || (native && store.get('sfb.network', false) !== 'online');
+  if (native) void stopLan().catch(() => {});
   // 回到首页即离开了房间（主机随页面关闭），房间战绩一并删除
   store.clear(HISTORY_KEY, false);
   const saved = store.get('sfb.tab', false) as Tab | null;
-  let tab: Tab = saved === 'join' || saved === 'lobby' ? saved : 'host';
+  const tabs: Tab[] = isLanPage() ? ['join'] : lan ? ['host', 'join'] : ['host', 'join', 'lobby'];
+  let tab: Tab = tabs.includes(saved as Tab) ? saved as Tab : tabs[0];
 
   app.innerHTML = `
-  <div class="site home">
+  <div class="site home${native || isLanPage() ? ' app-home' : ''}">
     <header class="site-hero">
       <div class="site-bar"><span class="brand"><img class="logo-light" src="${brand('logo-white-sm.png')}" alt="ScanKick"><img class="logo-dark" src="${brand('logo-dark-sm.png')}" alt="ScanKick"></span>${siteTools()}</div>
       <div class="hero-body">
@@ -29,16 +34,18 @@ export function mountHome(app: HTMLElement) {
     </header>
     <main class="site-main">
       <div class="home-card">
+        ${native ? `<div class="network-mode seg" role="group" aria-label="${t('lan.mode')}"><button data-network="online" class="${lan ? '' : 'on'}">${t('lan.online')}</button><button data-network="lan" class="${lan ? 'on' : ''}">${t('lan.local')}</button></div>` : ''}
+        ${lan ? `<p class="hint lan-hint">${t('lan.hint')}</p>` : ''}
         <div class="tabs" role="tablist">
-          ${(['host', 'join', 'lobby'] as Tab[])
+          ${tabs
             .map((k) => `<button role="tab" data-tab="${k}">${t(`tab.${k}`)}${k === 'lobby' ? ' <span class="count"></span>' : ''}</button>`)
             .join('')}
         </div>
 
         <section data-pane="host">
           <h2 class="pane-title">${t('tab.host')}</h2>
-          <label class="opt-row"><span>${icon.globe}${t('host.listed')}</span>
-            <input type="checkbox" class="switch opt-listed"></label>
+          <div ${lan ? 'hidden' : ''}><label class="opt-row"><span>${icon.globe}${t('host.listed')}</span>
+            <input type="checkbox" class="switch opt-listed"></label></div>
           <label class="pin-field">${icon.lock}<input class="opt-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="${t('host.pin')}"></label>
           <p class="field-err" hidden>${t('host.pinBad')}</p>
           <button class="choice create">${icon.tv}<span><b>${t('host.screen')}</b><small>${t('host.screenDesc')}</small></span>${icon.right}</button>
@@ -47,7 +54,9 @@ export function mountHome(app: HTMLElement) {
 
         <section data-pane="join">
           <h2 class="pane-title">${t('tab.join')}</h2>
-          <button class="scan-btn">${icon.scan}<b>${t('join.scan')}</b><small>${t('join.scanDesc')}</small></button>
+          <div ${lan ? 'hidden' : ''}><button class="scan-btn">${icon.scan}<b>${t('join.scan')}</b><small>${t('join.scanDesc')}</small></button></div>
+          ${lan ? `<p class="hint">${t('lan.joinHint')}</p>` : ''}
+          <div ${lan && native ? 'hidden' : ''}>
           <div class="divider"><span>${t('join.or')}</span></div>
           <form class="code-form">
             <label class="code-boxes">
@@ -56,6 +65,7 @@ export function mountHome(app: HTMLElement) {
             </label>
             <button type="submit" class="join-btn">${t('join.go')}</button>
           </form>
+          </div>
         </section>
 
         <section data-pane="lobby">
@@ -74,6 +84,12 @@ export function mountHome(app: HTMLElement) {
 
   const $ = <T extends HTMLElement>(s: string) => app.querySelector(s) as T;
   bindSiteTools(app);
+  app.querySelectorAll<HTMLButtonElement>('[data-network]').forEach((button) => {
+    button.onclick = () => {
+      store.set('sfb.network', button.dataset.network!, false);
+      location.reload();
+    };
+  });
 
   // ---------- 分页 ----------
   const showTab = (k: Tab) => {
@@ -99,7 +115,7 @@ export function mountHome(app: HTMLElement) {
       pinEl.focus();
       return;
     }
-    store.set('sfb.roomopts', JSON.stringify({ listed: $<HTMLInputElement>('.opt-listed').checked, pin: pin || undefined }), false);
+    store.set('sfb.roomopts', JSON.stringify({ listed: !lan && $<HTMLInputElement>('.opt-listed').checked, mode: lan ? 'lan' : undefined, pin: pin || undefined }), false);
     // 每次从首页创建都换新房间码，避免旧房间的玩家绕过新设置的密码重连
     store.set('sfb.room', '', false);
     store.set('sfb.hostroom', '', false);
@@ -110,6 +126,7 @@ export function mountHome(app: HTMLElement) {
 
   // ---------- 加入：房间码格子 ----------
   const codeEl = $<HTMLInputElement>('.code');
+  if (isLanPage()) codeEl.value = window.__SCANKICK_LAN__!.room;
   const boxes = [...app.querySelectorAll<HTMLElement>('.code-boxes span')];
   const paint = () => {
     const v = codeEl.value;
@@ -122,7 +139,7 @@ export function mountHome(app: HTMLElement) {
   };
   const go = () => {
     const code = normalizeCode(codeEl.value);
-    if (code.length === CODE_LEN) location.hash = `#/join/${code}`;
+    if (code.length === CODE_LEN) location.hash = `#/join/${code}${lan ? '?lan=1' : ''}`;
     else codeEl.focus();
   };
   codeEl.oninput = () => {
@@ -137,6 +154,8 @@ export function mountHome(app: HTMLElement) {
   };
   paint();
   $('.scan-btn').onclick = () => openScanner(app);
+
+  if (lan) return; // Never initialize public MQTT discovery in local mode.
 
   // ---------- 公开大厅：订阅所有房间的保留消息 ----------
   let rooms = new Map<string, LobbyInfo>();

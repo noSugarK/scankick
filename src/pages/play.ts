@@ -17,6 +17,10 @@ import {
   type Snapshot,
 } from '../game/types';
 import { ClientNet, type ClientState } from '../net/client';
+import { LanClient } from '../net/lan-client';
+import { LanHost } from '../net/lan-host';
+import { lanSession } from '../net/lan-session';
+import { bindLanAddress, lanInfoHtml } from '../ui/lan-room';
 import { SnapBuffer } from '../net/interp';
 import { decodeSnapshot, encodeInput } from '../net/protocol';
 import { CONFIG } from '../config';
@@ -34,13 +38,14 @@ const STATE_TEXT: Record<ClientState, Key> = {
   waiting: 'status.waiting',
   connecting: 'status.connecting',
   p2p: 'status.p2p',
+  lan: 'status.lan',
   relay: 'status.relay',
   lost: 'status.lost',
   rejected: 'status.rejected',
 };
 
 /** client：扫码加入的手机；host：无大屏模式，本机既是主机又是球员 */
-export type PlayMode = { kind: 'client'; room: string; forceRelay: boolean; pin: string; lock: boolean } | { kind: 'host' };
+export type PlayMode = { kind: 'client'; room: string; forceRelay: boolean; pin: string; lock: boolean; lan: boolean } | { kind: 'host' };
 
 export function mountPlay(app: HTMLElement, mode: PlayMode) {
   // 只在手机比赛页拦截双指缩放：两个拇指同时按摇杆和按键时 iOS 会当成捏合。
@@ -60,6 +65,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   const joined = store.get(joinedKey, false);
   const autoJoin = joined === '1' || joined === 'w';
   const opts = isHost ? roomOpts() : null;
+  const local = opts?.mode === 'lan' ? lanSession() : null;
   // 客户端密码：二维码自带 > 本标签页上次输入的
   const urlPin = mode.kind === 'client' ? mode.pin : '';
   const pinKey = `sfb.pin.${room}`;
@@ -79,6 +85,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         <button class="ghost fs-btn" hidden>${t('play.fullscreen')}</button>
         <button class="ghost cam">${t('play.follow')}</button>
         <button class="ghost menu">${t('play.menu')}</button>
+        <button class="ghost leave-room">${t('play.leave')}</button>
       </div>
     </div>
     <div class="pad"></div>
@@ -97,10 +104,11 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       </div>
       <button class="primary go">${t(isHost ? 'play.create' : 'play.enter')}</button>
       ${isHost ? '' : `<button class="ghost watch-go">${t('play.watch')}</button>`}
+      <button class="ghost return-home">${t('play.home')}</button>
       <p class="muted small">${t('play.tip')}</p>
     </div>
     <div class="toast" hidden></div>
-    <div class="rotate">${t('play.rotate')}</div>
+    <div class="rotate"><span>${t('play.rotate')}</span><button class="ghost leave-room">${t('play.leave')}</button></div>
   </div>`;
 
   const $ = <T extends HTMLElement>(s: string) => app.querySelector(s) as T;
@@ -121,7 +129,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     };
   });
 
-  let net: ClientNet | null = null;
+  let net: ClientNet | LanClient | null = null;
   let game: HostGame | null = null;
   let meId = -1;
   /** 观战中：不占球员名额，没有手柄 */
@@ -140,6 +148,18 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let qrOpen: boolean | null = null;
   let lastPhase: Phase | -1 = -1;
 
+  const leave = () => {
+    if ((game || net) && !confirm(t(game ? 'play.confirmCloseRoom' : 'play.confirmLeave'))) return;
+    autoFs = false;
+    game?.close();
+    net?.close();
+    store.set(joinedKey, '', false);
+    location.hash = '#/';
+  };
+  app.querySelectorAll<HTMLButtonElement>('.leave-room, .return-home').forEach((button) => {
+    button.onclick = leave;
+  });
+
   const toast = (text: string, ms = 2000) => {
     toastEl.textContent = text;
     toastEl.hidden = false;
@@ -151,7 +171,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     // 中继或失联时状态标签可点：手动重试直连
     const retry = s === 'relay' || s === 'lost';
     statusEl.className = `status ${s}${retry ? ' retry' : ''}`;
-    const ping = (s === 'p2p' || s === 'relay') && rtt ? ` ${Math.round(rtt)}ms` : '';
+    const ping = (s === 'p2p' || s === 'relay' || s === 'lan') && rtt ? ` ${Math.round(rtt)}ms` : '';
     const role = watching ? `${t('play.watching')} · ` : '';
     statusEl.querySelector('span')!.textContent = role + t(STATE_TEXT[s]) + ping + (retry ? ' ↻' : '');
     statusEl.title = retry ? t('status.tapRetry') : '';
@@ -202,7 +222,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const pin = (pinEl.hidden ? urlPin : pinEl.value.replace(/\D/g, '')) || undefined;
     if (!pinEl.hidden) store.set(pinKey, pin ?? '', false);
     net?.close();
-    net = new ClientNet(room, { token, name, team, pin, watch });
+    const Connection = mode.kind === 'client' && mode.lan ? LanClient : ClientNet;
+    net = new Connection(room, { token, name, team, pin, watch });
     net.forceRelay = forceRelay;
     buf.delay = 60;
     net.onState = (s) => {
@@ -225,7 +246,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       if (s) buf.push(s, performance.now());
     };
     net.onJson = onMsg;
-    setStatus('signal');
+    setStatus(mode.kind === 'client' && mode.lan ? 'connecting' : 'signal');
     try {
       await net.start();
     } catch {
@@ -239,11 +260,11 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     $('.play').classList.add('joined');
     keepAwake();
     unlockAudio();
-    game = new HostGame(room, opts!);
+    game = new HostGame(room, opts!, local ? (_room, cb) => new LanHost(local, cb) : undefined);
     game.onLocal = onMsg;
     game.onStatus = (ok, text) => {
       statusEl.className = `status ${ok ? 'p2p' : 'lost'}`;
-      statusEl.querySelector('span')!.textContent = ok ? t('status.host', { room }) : text;
+      statusEl.querySelector('span')!.textContent = ok ? `${local ? t('status.lan') + ' · ' : ''}${t('status.host', { room })}` : text;
     };
     meId = game.addLocal(name, team);
     await game.start();
@@ -318,7 +339,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       html += `<div class="host-qr">${qrUrl ? `<img src="${qrUrl}" alt="">` : ''}<div>
         <div class="room-code sm">${esc(room)}</div>${pinLineHtml(opts?.pin)}
         <div class="muted small">${t('play.scanToJoin')}${opts?.listed ? t('play.listed') : ''}</div>
-        <button class="ghost save-qr">${icon.download}${t('qr.save')}</button></div></div>`;
+        <button class="ghost save-qr">${icon.download}${t('qr.save')}</button></div></div>${local ? lanInfoHtml() : ''}`;
     }
     if (ended && r.end && !resultClosed) {
       html += `<div class="result-strip">${resultLineHtml(r.end)}<button class="ghost result-x" aria-label="${t('screen.closePanel')}">×</button></div>`;
@@ -375,6 +396,12 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const tip = watching ? t('play.watchTip') : lobby ? t(isHost ? 'play.hostTip' : 'play.warmup') : '';
     html += `<div class="pmeta">${tip ? `<span>${tip}</span>` : ''}<a class="panel-guide" href="#/guide" target="_blank" rel="noopener">${t('play.guide')}</a></div></div>`;
     panel.innerHTML = html;
+    if (local) bindLanAddress(panel, () => {
+      QRCode.toDataURL(joinUrl({ room, pin: opts?.pin }), { width: 220, margin: 1 }).then((url) => {
+        qrUrl = url;
+        renderPanel();
+      });
+    });
 
     const on = (sel: string, fn: () => void) => {
       const el = panel.querySelector<HTMLElement>(sel);
