@@ -139,6 +139,68 @@ npm test           # 物理与输入回归测试（Node.js 22.15+ 或 24 LTS）
 
 输入协议使用 32 位序号过滤旧包和重复包。按键变化立即发送，直连输入使用可靠有序通道，中继输入使用 MQTT QoS 1；主机逐帧处理按下和松开，快照仍通过原来的低延迟通道发送。当前协议 v3 在快照中同步比赛模式、金球阶段与派对规则，与旧页面隔离；更新后主机和手机都需要刷新页面并重新开房加入。
 
+#### Tauri 应用开发（实验中）
+
+网页与应用共享 `src/` 和 `public/`，原生入口及配置位于 `src-tauri/`。
+应用首页可选择「在线模式」或「局域网模式」。在线模式沿用 MQTT/WebRTC；局域网模式由 Rust 提供本地 HTTP/WebSocket 服务，复用现有主机比赛逻辑，不连接公共大厅、MQTT 或 STUN。
+
+局域网玩法：
+
+1. 主机与玩家连接同一 Wi-Fi，或手动开启主机热点并让玩家连接。
+2. App 选择「局域网模式」，再选择大屏或手机开房，可设置房间密码。
+3. 主机在地址列表中选择玩家能访问的网卡；玩家用系统相机扫描二维码，在浏览器加入，无需安装 App。
+4. 主机保持应用前台、屏幕常亮；退出房间会关闭本地服务。重新开房后需重新扫码。
+
+有多个网卡时不要选择 VPN/虚拟网卡。Windows 若弹出防火墙提示，需允许应用在实际使用的网络上接收连接；带客户端隔离的访客 Wi-Fi 可能无法互联。
+玩家使用的是局域网 HTTP 页面，网页摄像头、自动常亮等能力可能不可用，请使用系统相机扫码并手动避免锁屏。
+自动开启热点、手机后台持续比赛与 Android/iOS 真机兼容性验证尚未完成。
+
+已安装 Rust、Tauri CLI 和对应平台构建工具后：
+
+```bash
+npm ci
+npm run app:dev      # 启动 Vite 和原生窗口
+npm run app:build    # 构建当前桌面平台安装包
+cargo test --manifest-path src-tauri/Cargo.toml --lib  # 本地 HTTP/WebSocket 集成测试
+```
+
+应用开发时先构建一份供玩家下载的静态资源，再启动 `http://127.0.0.1:1420`，端口占用时直接报错；修改页面后需重新启动应用开发命令，刷新内嵌的玩家资源。`npm run dev` 继续提供原有的 HTTPS 网页开发服务。
+Windows 需要 MSVC Build Tools 和 WebView2；macOS/iOS 需要 Mac 和 Xcode，Android 需要另行安装 SDK/NDK，并执行 `cargo tauri android init` 生成平台工程。
+Android 开发入口为 `cargo tauri android dev`，构建入口为 `cargo tauri android build`；移动端需要根据设备配置开发服务器可达地址。
+现有 GitHub Pages 工作流继续独立部署网页。
+
+#### 应用安装包（GitHub Actions）
+
+工作流 `Build app installers` 支持手动运行，也会在推送 `v*` 标签时自动构建。普通分支手动运行后，在该次 Actions 的 Artifacts 中下载；标签构建全部成功后自动创建或更新 GitHub Release。
+
+| 平台 | 安装包命名示例 |
+| --- | --- |
+| Windows x64 | `ScanKick_0.1.0_windows-x64.exe`、`ScanKick_0.1.0_windows-x64.msi` |
+| macOS Intel / Apple Silicon 通用版 | `ScanKick_0.1.0_macos-universal.dmg` |
+| Linux x64 | `ScanKick_0.1.0_linux-x64.deb`、`ScanKick_0.1.0_linux-x64.rpm` |
+| Android ARM64 | `ScanKick_0.1.0_android-arm64.apk`，未配置签名时带 `-debug` 后缀 |
+
+只上传以上安装包，不上传 AppImage、裸可执行文件、`.app` 目录、AAB 或构建目录。Actions 下载归档保留 14 天；GitHub Release 自带的源码下载链接由 GitHub 自动提供。
+Android SDK/NDK 和安卓工程在 CI 中自动准备，不要求本机预先生成安卓工程；本机 `npm run app:build` 仍只构建当前桌面平台。
+
+发布前保持 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 中的版本一致，提交代码后打对应标签，例如：
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+`v0.1.0-beta.1` 等带预发布版本的标签会创建预发布版本，应用版本也需同步修改。新工作流尚未进入默认分支时，网页可能不显示手动运行入口；向包含该工作流的提交推送标签仍可触发。
+
+Android 默认生成可安装的调试 APK，调试签名随 CI 运行变化，不保证覆盖升级。正式签名请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets（必须全设或全不设）：
+
+- `ANDROID_KEYSTORE_BASE64`：签名 keystore 文件的 Base64，使用不换行的编码。
+- `ANDROID_KEYSTORE_PASSWORD`：keystore 密码。
+- `ANDROID_KEY_ALIAS`：签名密钥别名。
+- `ANDROID_KEY_PASSWORD`：签名密钥密码。
+
+配置齐全后自动构建正式签名 APK；签名文件只写入临时目录，构建后清理。Windows/macOS 目前未配置发行者签名或 Apple 公证，首次安装可能显示系统校验提示。
+
 #### 部署到 GitHub Pages
 
 1. 推送到 GitHub 仓库的 `main` 分支。
