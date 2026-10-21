@@ -6,20 +6,26 @@ export const MSG_SNAP = 2;
 const q = (v: number) => Math.max(-127, Math.min(127, Math.round(v * 127)));
 
 export function encodeInput(seq: number, inp: Input): Uint8Array {
-  const b = new Uint8Array(5);
+  const b = new Uint8Array(8);
   const dv = new DataView(b.buffer);
   b[0] = MSG_INPUT;
-  b[1] = seq & 255;
-  dv.setInt8(2, q(inp.jx));
-  dv.setInt8(3, q(inp.jy));
-  b[4] = inp.btn;
+  dv.setUint32(1, seq >>> 0, true);
+  dv.setInt8(5, q(inp.jx));
+  dv.setInt8(6, q(inp.jy));
+  b[7] = inp.btn;
   return b;
 }
 
-export function decodeInput(b: Uint8Array): Input | null {
-  if (b.length < 5 || b[0] !== MSG_INPUT) return null;
+export function decodeInput(b: Uint8Array): (Input & { seq: number }) | null {
+  if (b.length !== 8 || b[0] !== MSG_INPUT) return null;
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  return { jx: dv.getInt8(2) / 127, jy: dv.getInt8(3) / 127, btn: b[4] };
+  return { seq: dv.getUint32(1, true), jx: dv.getInt8(5) / 127, jy: dv.getInt8(6) / 127, btn: b[7] & 15 };
+}
+
+/** 32 位序号回绕后仍可比较；重复包和迟到的旧链路包都忽略。 */
+export function newerInput(seq: number, prev: number | undefined): boolean {
+  const delta = (seq - (prev ?? seq)) >>> 0;
+  return prev === undefined || (delta > 0 && delta < 0x80000000);
 }
 
 // 位置 x10 精度 0.1，速度单位 u/s 取整

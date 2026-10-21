@@ -120,9 +120,12 @@ No big screen? Choose Host → Host on phone, and others scan the QR code on tha
 ```bash
 npm install
 npm run dev        # HTTPS, so phones on the LAN can scan in (trust the self-signed cert the first time)
+npm test           # Physics and input regression tests (Node.js 22.15+ or 24 LTS)
 ```
 
 When the big screen is opened on `localhost`, the QR code switches to your LAN IP automatically. Append `?relay` to a phone URL (for example `#/join/ABCDE?relay`) to force the relay.
+
+Input protocol v2 uses 32-bit sequence numbers to reject stale and duplicate packets. Button changes are sent immediately over the reliable ordered channel, or MQTT QoS 1 when relaying; the host processes press/release transitions on separate simulation ticks. Snapshots keep their existing low-latency transport. v2 rooms are isolated from older pages: after updating, refresh both the host and phones, then create and join a new room.
 
 #### Deploy to GitHub Pages
 

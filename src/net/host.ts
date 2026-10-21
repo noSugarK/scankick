@@ -172,7 +172,7 @@ export class HostNet {
       if (isJson(payload)) this.onSignalJson(cid, parseJson(payload));
       else this.receive(cid, payload);
     });
-    this.signal.sub('h/+');
+    this.signal.sub('h/+', 1);
     this.watchdog = window.setInterval(() => this.checkTimeouts(), 1000);
   }
 

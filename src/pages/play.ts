@@ -460,19 +460,25 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
   let seq = 0;
   let lastSent = '';
   let lastSentAt = 0;
-  setInterval(() => {
+  const sendInput = (buttons = false) => {
+    if (game) {
+      if (buttons) game.setLocalInput({ ...pad.input });
+      return;
+    }
     if (!net?.linked || watching) return;
     const key = `${pad.input.jx.toFixed(2)},${pad.input.jy.toFixed(2)},${pad.input.btn}`;
     const now = performance.now();
     const relay = net.state === 'relay';
     const heartbeat = relay ? 200 : 100;
-    if (key !== lastSent || now - lastSentAt > heartbeat) {
-      if (relay && key !== lastSent && now - lastSentAt < 60) return; // 中继限速约 15Hz
+    if (buttons || key !== lastSent || now - lastSentAt > heartbeat) {
+      if (!buttons && relay && key !== lastSent && now - lastSentAt < 60) return; // 只对移动限速
       net.sendInput(encodeInput(seq++, pad.input));
       lastSent = key;
       lastSentAt = now;
     }
-  }, 33);
+  };
+  pad.onButtons = () => sendInput(true);
+  setInterval(sendInput, 33);
   setInterval(() => net?.linked && net.sendJson({ t: 'ping', ts: performance.now() }), 2000);
 
   // ---------- 渲染与本地预测 ----------

@@ -55,6 +55,7 @@ export interface SimPlayer {
   vy: number;
   angle: number;
   input: Input;
+  inputQueue: Input[];
   prevBtn: number;
   stamina: number;
   exhausted: boolean;
@@ -113,6 +114,7 @@ export class Sim {
       vy: 0,
       angle: team === 0 ? 0 : Math.PI,
       input: NO_INPUT,
+      inputQueue: [],
       prevBtn: 0,
       stamina: 1,
       exhausted: false,
@@ -151,7 +153,14 @@ export class Sim {
 
   setInput(id: number, input: Input) {
     const p = this.players.get(id);
-    if (p) p.input = input;
+    if (!p) return;
+    // 保留两次物理帧之间的按下/松开，移动状态仍直接覆盖。
+    if (input.btn !== p.input.btn) {
+      // 最多缓存约半秒的按键变化，防止异常客户端无限堆积。
+      if (p.inputQueue.length >= 32) p.inputQueue[31] = { ...input };
+      else p.inputQueue.push({ ...input });
+    }
+    p.input = { ...input };
   }
 
   teamPlayers(team: Team) {
@@ -225,17 +234,25 @@ export class Sim {
         p.y += p.vy * dt;
       }
       const b = this.ball;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
       const damp = Math.pow(BALL_DAMP, dt);
       b.vx *= damp;
       b.vy *= damp;
 
       this.collidePlayers();
-      for (const p of this.players.values()) this.collidePlayerBall(p);
+      // 每次最多移动半个球半径，避免高速球穿过门柱或底线。
+      let remaining = dt;
+      while (remaining > 0) {
+        const part = Math.min(remaining, F.BR / 2 / Math.max(1, Math.hypot(b.vx, b.vy)));
+        const prevX = b.x;
+        const prevY = b.y;
+        b.x += b.vx * part;
+        b.y += b.vy * part;
+        for (const p of this.players.values()) this.collidePlayerBall(p);
+        this.collidePosts();
+        this.constrainBall(prevX, prevY);
+        remaining -= part;
+      }
       for (const p of this.players.values()) this.tryKick(p);
-      this.collidePosts();
-      this.constrainBall();
       for (const p of this.players.values()) this.constrainPlayer(p);
     }
 
@@ -243,7 +260,8 @@ export class Sim {
   }
 
   private updatePlayer(p: SimPlayer, dt: number, frozen: boolean) {
-    const inp = frozen ? NO_INPUT : p.input;
+    const inp = frozen ? NO_INPUT : (p.inputQueue.shift() ?? p.input);
+    if (frozen) p.inputQueue.length = 0;
     const pressed = inp.btn & ~p.prevBtn;
     const released = ~inp.btn & p.prevBtn;
     p.prevBtn = inp.btn;
@@ -480,9 +498,19 @@ export class Sim {
     }
   }
 
-  private constrainBall() {
+  private constrainBall(prevX: number, prevY: number) {
     const b = this.ball;
     const r = F.BR;
+    // 先检查进入球门的轨迹，再约束球网内部；不能把底线外的球夹进门。
+    if (Math.abs(prevX) <= F.HL && Math.abs(b.x) > F.HL - r) {
+      const wallX = Math.sign(b.x) * (F.HL - r);
+      const k = Math.max(0, Math.min(1, (wallX - prevX) / (b.x - prevX || 1)));
+      const entryY = prevY + (b.y - prevY) * k;
+      if (Math.abs(entryY) > F.GW - r) {
+        b.x = wallX;
+        if (b.vx * Math.sign(wallX) > 0) b.vx *= -0.7;
+      }
+    }
     const inGoal = Math.abs(b.x) > F.HL;
     if (inGoal) {
       // 球网内部
@@ -553,7 +581,7 @@ export class Sim {
 
   private updatePhase(dt: number) {
     const b = this.ball;
-    const crossed = Math.abs(b.x) > F.HL + F.BR;
+    const crossed = Math.abs(b.x) > F.HL + F.BR && Math.abs(b.y) <= F.GW - F.BR;
     switch (this.phase) {
       case Phase.Lobby:
         // 大厅热身：进球不计分，球回到中圈

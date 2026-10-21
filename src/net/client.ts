@@ -221,8 +221,9 @@ export class ClientNet {
   }
 
   sendInput(bin: Uint8Array) {
-    if (this.p2pOpen()) this.fast!.send(bin as Uint8Array<ArrayBuffer>);
-    else if (this.relay) this.signal.pub(`h/${this.cid}`, bin);
+    // 输入包含按下和松开，走可靠有序通道；快照仍走 fast。
+    if (this.p2pOpen()) this.ctl!.send(bin as Uint8Array<ArrayBuffer>);
+    else if (this.relay) this.signal.pub(`h/${this.cid}`, bin, false, 1);
   }
 
   sendJson(obj: object) {

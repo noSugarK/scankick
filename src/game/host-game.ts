@@ -1,7 +1,7 @@
 import { CONFIG } from '../config';
 import { HostNet, type Hello } from '../net/host';
 import { LOBBY_HEARTBEAT_MS, LobbyPublisher } from '../net/lobby';
-import { decodeInput, encodeSnapshot } from '../net/protocol';
+import { decodeInput, encodeSnapshot, newerInput } from '../net/protocol';
 import { t } from '../i18n';
 import { sfxGoal, sfxKick, sfxWhistle } from '../ui/sound';
 import { HISTORY_KEY, store, type RoomOpts } from '../ui/util';
@@ -70,6 +70,7 @@ export class HostGame {
 
   private slots = new Map<number, Slot>();
   private byCid = new Map<string, number>();
+  private inputSeq = new Map<string, number>();
   private watchers = new Map<string, Watcher>();
   private votes: [Set<number>, Set<number>] = [new Set(), new Set()];
   private pendingEnd: Pick<EndInfo, 'reason' | 'winner'> | null = null;
@@ -115,7 +116,10 @@ export class HostGame {
       onBinary: (cid, data) => {
         const pid = this.byCid.get(cid);
         const inp = pid !== undefined ? decodeInput(data) : null;
-        if (inp) this.sim.setInput(pid!, inp);
+        if (inp && newerInput(inp.seq, this.inputSeq.get(cid))) {
+          this.inputSeq.set(cid, inp.seq);
+          this.sim.setInput(pid!, inp);
+        }
       },
       onLink: (cid, mode) => {
         const s = this.slotByCid(cid);
@@ -124,6 +128,7 @@ export class HostGame {
         this.rosterChanged();
       },
       onLeave: (cid) => {
+        this.inputSeq.delete(cid);
         if (this.watchers.delete(cid)) {
           this.rosterChanged();
           return;

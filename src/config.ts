@@ -5,7 +5,8 @@ export const CONFIG = {
     'wss://broker-cn.emqx.io:8084/mqtt',
     'wss://broker.emqx.io:8084/mqtt',
   ],
-  topicPrefix: 'scanfb/v1',
+  // v2 使用 32 位输入序号，隔离仍在使用旧输入协议的页面。
+  topicPrefix: 'scanfb/v2',
   iceServers: [
     { urls: ['stun:stun.miwifi.com:3478', 'stun:stun.chat.bilibili.com:3478'] },
     // 有自建 coturn 时在这里加上，可显著提高 4G 下的直连成功率：
