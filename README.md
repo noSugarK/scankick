@@ -7,7 +7,7 @@
 
 <p align="center">
   <b>大屏开房，手机扫码当手柄，最多 4v4 实时对战的多人足球。</b><br>
-  无需安装 App，无需后端服务器，打开网页就能踢。
+  无需后端服务器，打开网页就能踢；也提供 Windows / macOS / Linux / Android 应用，支持断网局域网对战。
 </p>
 
 <p align="center">
@@ -15,11 +15,17 @@
   <a href="https://github.com/noSugarK/scankick/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/noSugarK/scankick/deploy.yml?branch=main&label=deploy" alt="Deploy"></a>
   <a href="https://github.com/noSugarK/scankick/commits/main"><img src="https://img.shields.io/github/last-commit/noSugarK/scankick" alt="Last commit"></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
+  <br>
+  <a href="https://github.com/noSugarK/scankick/releases"><img src="https://img.shields.io/github/v/release/noSugarK/scankick?include_prereleases&sort=semver&label=release&color=2fa866" alt="Latest release"></a>
+  <a href="https://github.com/noSugarK/scankick/releases"><img src="https://img.shields.io/github/downloads/noSugarK/scankick/total?label=downloads&color=2fa866" alt="Downloads"></a>
+  <a href="https://github.com/noSugarK/scankick/actions/workflows/release-app.yml"><img src="https://img.shields.io/github/actions/workflow/status/noSugarK/scankick/release-app.yml?label=installers" alt="Installers"></a>
+  <img src="https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-informational" alt="Platforms">
 </p>
 
 <p align="center">
   <a href="https://nosugark.github.io/scankick/"><b>立即开玩</b></a> ·
   <a href="https://nosugark.github.io/scankick/#/guide">玩法教程</a> ·
+  <a href="#下载应用">下载应用</a> ·
   <a href="https://www.bilibili.com/video/BV1gfJf6iEEY/">宣传片</a> ·
   简体中文 · <a href="README.en.md">English</a>
 </p>
@@ -77,6 +83,25 @@
 3. 横过手机，等房主点「开始比赛」。
 
 没有大屏的话，在手机上选「开房 → 手机开房」，其他人扫这台手机屏幕上的二维码。
+
+## 下载应用
+
+网页版打开即玩，玩家永远不需要安装任何东西。想在没有外网的地方开局域网房间，或在安卓上横屏全屏游玩，可以安装应用。
+安装包在 [GitHub Releases](https://github.com/noSugarK/scankick/releases)，网页版右上角的下载按钮也会列出最新版本。
+
+| 系统 | 安装包 | 要求与说明 |
+|---|---|---|
+| Windows | `.exe`（推荐）/ `.msi` | Windows 10 / 11 x64；缺少 WebView2 时安装程序会自动补装 |
+| macOS | `.dmg` | Intel 与 Apple Silicon 通用，macOS 10.13+ |
+| Linux | `.deb` / `.rpm` | x64，在 Ubuntu 22.04 上构建，需要 glibc 2.35+ 与 WebKitGTK 4.1 |
+| Android | `.apk` | ARM64，Android 7.0+ |
+| iOS / iPadOS | 暂不提供 | 用 Safari 打开网页即可扫码当手柄 |
+
+- **在线模式**：与网页版共用公开大厅和房间，二维码指向网页版，玩家扫码后直接在浏览器里加入。
+- **局域网模式**：本机启动 HTTP/WebSocket 服务，无需外网；玩家连同一 Wi-Fi 或热点，用浏览器加入。
+- **安卓**：竖屏保留系统状态栏，横屏自动全屏；扫码时请求相机权限；外部链接用系统浏览器打开。
+
+版本号带 `-` 的（如 `v0.1.0-beta.2`）是预发布版本。安装包暂未做发行者签名：Windows 可能出现 SmartScreen 提示（点「更多信息 → 仍要运行」），macOS 首次打开需在「系统设置 → 隐私与安全性」中允许；测试签名的 APK 应用 ID 带 `.debug`，不保证能覆盖升级。
 
 ## 操作
 
@@ -153,7 +178,7 @@ npm test           # 物理与输入回归测试（Node.js 22.15+ 或 24 LTS）
 
 有多个网卡时不要选择 VPN/虚拟网卡。Windows 若弹出防火墙提示，需允许应用在实际使用的网络上接收连接；带客户端隔离的访客 Wi-Fi 可能无法互联。
 玩家使用的是局域网 HTTP 页面，网页摄像头、自动常亮等能力可能不可用，请使用系统相机扫码并手动避免锁屏。
-自动开启热点、手机后台持续比赛与 Android/iOS 真机兼容性验证尚未完成。
+自动开启热点、手机后台持续比赛尚未支持；暂不提供 iOS 应用。
 
 已安装 Rust、Tauri CLI 和对应平台构建工具后：
 
@@ -190,7 +215,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-`v0.1.0-beta.1` 等带预发布版本的标签会创建预发布版本，应用版本也需同步修改。新工作流尚未进入默认分支时，网页可能不显示手动运行入口；向包含该工作流的提交推送标签仍可触发。
+版本号含 `-` 的标签（如 `v0.1.0-beta.1`、`v1.0.0-rc.1`）创建预发布版本，否则为正式版本；标签必须与应用版本一致。新工作流尚未进入默认分支时，网页可能不显示手动运行入口；向包含该工作流的提交推送标签仍可触发。
 
 MSI 内部版本只接受数字：`bundle.windows.wix.version` 应设为去掉预发布后缀的版本（例如 `0.1.0`），CI 会检查一致性；下载文件名仍保留完整的 `0.1.0-beta.2` 等版本。
 

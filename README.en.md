@@ -7,7 +7,7 @@
 
 <p align="center">
   <b>Multiplayer football for up to 4v4: host on a big screen, scan in, and play with your phone as the gamepad.</b><br>
-  No app to install, no backend server. Open the page and kick off.
+  No backend server: open the page and kick off. Windows, macOS, Linux, and Android apps add offline LAN play.
 </p>
 
 <p align="center">
@@ -15,11 +15,17 @@
   <a href="https://github.com/noSugarK/scankick/actions/workflows/deploy.yml"><img src="https://img.shields.io/github/actions/workflow/status/noSugarK/scankick/deploy.yml?branch=main&label=deploy" alt="Deploy"></a>
   <a href="https://github.com/noSugarK/scankick/commits/main"><img src="https://img.shields.io/github/last-commit/noSugarK/scankick" alt="Last commit"></a>
   <img src="https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white" alt="TypeScript">
+  <br>
+  <a href="https://github.com/noSugarK/scankick/releases"><img src="https://img.shields.io/github/v/release/noSugarK/scankick?include_prereleases&sort=semver&label=release&color=2fa866" alt="Latest release"></a>
+  <a href="https://github.com/noSugarK/scankick/releases"><img src="https://img.shields.io/github/downloads/noSugarK/scankick/total?label=downloads&color=2fa866" alt="Downloads"></a>
+  <a href="https://github.com/noSugarK/scankick/actions/workflows/release-app.yml"><img src="https://img.shields.io/github/actions/workflow/status/noSugarK/scankick/release-app.yml?label=installers" alt="Installers"></a>
+  <img src="https://img.shields.io/badge/platform-Web%20%7C%20Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20Android-informational" alt="Platforms">
 </p>
 
 <p align="center">
   <a href="https://nosugark.github.io/scankick/"><b>Play now</b></a> ·
   <a href="https://nosugark.github.io/scankick/#/guide">How to play</a> ·
+  <a href="#download-the-app">Download the app</a> ·
   <a href="https://www.bilibili.com/video/BV1gfJf6iEEY/">Trailer</a> ·
   <a href="README.md">简体中文</a> · English
 </p>
@@ -77,6 +83,25 @@
 3. Turn your phone sideways and wait for the room host to start the match.
 
 No big screen? Choose Host → Host on phone, and others scan the QR code on that phone.
+
+## Download the app
+
+The website is all you need, and players never install anything. Install the app to host LAN rooms without internet access, or for fullscreen landscape play on Android.
+Installers are on [GitHub Releases](https://github.com/noSugarK/scankick/releases); the download button at the top right of the website also lists the latest version.
+
+| System | Installer | Requirements and notes |
+|---|---|---|
+| Windows | `.exe` (recommended) / `.msi` | Windows 10 / 11 x64; the installer adds WebView2 if it is missing |
+| macOS | `.dmg` | Universal (Intel and Apple Silicon), macOS 10.13+ |
+| Linux | `.deb` / `.rpm` | x64, built on Ubuntu 22.04; needs glibc 2.35+ and WebKitGTK 4.1 |
+| Android | `.apk` | ARM64, Android 7.0+ |
+| iOS / iPadOS | Not available | Open the website in Safari to scan in and play |
+
+- **Online mode**: shares the public lobby and rooms with the website. The QR code points to the website, so players join in their browser.
+- **Local network mode**: the app runs an HTTP/WebSocket server on the device, no internet needed. Players join from a browser on the same Wi-Fi or hotspot.
+- **Android**: the status bar stays visible in portrait and landscape goes fullscreen; scanning asks for camera permission; external links open in the system browser.
+
+Versions containing `-` (such as `v0.1.0-beta.2`) are prereleases. Installers are not publisher-signed yet: Windows may show a SmartScreen prompt (choose More info → Run anyway), and on macOS allow the app under System Settings → Privacy & Security the first time. Test-signed APKs use a `.debug` application ID and may not upgrade in place.
 
 ## Controls
 
@@ -147,7 +172,7 @@ The app home page offers Online and Local network modes. Online keeps MQTT/WebRT
 For local play, connect everyone to the same Wi-Fi or a manually enabled hotspot. Select Local network in the app and create a big-screen or phone-hosted room, optionally with a password. Select a reachable network interface and let players scan the QR code using their system camera to join in a browser. Keep the host foreground and its screen awake. Leaving the room stops the server; a new room requires a new QR code.
 
 Avoid VPN/virtual interfaces. Windows Firewall must allow incoming connections on the network in use; guest Wi-Fi with client isolation may block players. Local HTTP pages may not support camera access or screen wake locks, so use the system camera and prevent automatic locking manually.
-Automatic hotspots, background matches, and Android/iOS device compatibility validation are not included yet.
+Automatic hotspots and background matches are not supported yet, and there is no iOS app.
 
 With Rust, the Tauri CLI, and the platform build tools installed:
 
@@ -183,7 +208,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-Tags such as `v0.1.0-beta.1` create prereleases and must also match the application version. Manual dispatch may not appear until the workflow reaches the default branch; pushing a tag pointing to a commit containing the workflow can trigger it beforehand.
+Tags whose version contains `-` (such as `v0.1.0-beta.1` or `v1.0.0-rc.1`) create prereleases; others create full releases. Tags must match the application version. Manual dispatch may not appear until the workflow reaches the default branch; pushing a tag pointing to a commit containing the workflow can trigger it beforehand.
 
 MSI requires a numeric internal version: keep `bundle.windows.wix.version` equal to the application version without its prerelease suffix (for example, `0.1.0`); CI checks this. Download filenames retain the full version, such as `0.1.0-beta.2`.
 
