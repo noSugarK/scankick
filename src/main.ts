@@ -43,6 +43,16 @@ async function route() {
   } else mountHome(app);
 }
 
+// 原生 App 里的外部链接交给系统浏览器打开，不在应用内跳走
+if (isNativeApp()) {
+  document.addEventListener('click', (e) => {
+    const a = (e.target as Element).closest?.('a[href]') as HTMLAnchorElement | null;
+    if (!a || !/^https?:$/.test(a.protocol) || a.origin === location.origin) return;
+    e.preventDefault();
+    void window.__TAURI__!.core.invoke('plugin:opener|open_url', { url: a.href });
+  });
+}
+
 // 页面各自持有网络连接与定时器，切换路由时直接整页重载最稳妥
 window.addEventListener('hashchange', () => location.reload());
 route();
