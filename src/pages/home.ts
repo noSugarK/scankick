@@ -10,7 +10,7 @@ type Tab = 'host' | 'join' | 'lobby';
 
 export function mountHome(app: HTMLElement) {
   const native = isNativeApp();
-  const lan = isLanPage() || (native && store.get('sfb.network', false) !== 'online');
+  const lan = isLanPage() || (native && store.get('sfb.network') !== 'online');
   if (native) void stopLan().catch(() => {});
   // 回到首页即离开了房间（主机随页面关闭），房间战绩一并删除
   store.clear(HISTORY_KEY, false);
@@ -86,7 +86,7 @@ export function mountHome(app: HTMLElement) {
   bindSiteTools(app);
   app.querySelectorAll<HTMLButtonElement>('[data-network]').forEach((button) => {
     button.onclick = () => {
-      store.set('sfb.network', button.dataset.network!, false);
+      store.set('sfb.network', button.dataset.network!);
       location.reload();
     };
   });
