@@ -31,7 +31,7 @@ export function pinLineHtml(pin?: string): string {
 }
 
 /**
- * 名单里的一行。manage 为真时可以左滑露出操作：真人有「转让房主」和「移出」，AI 只有「移出」；
+ * 名单里的一行。manage 为真时可以点击或左滑露出操作：真人有「转让房主」和「移出」，AI 只有「移出」；
  * 平时不显示按钮，避免误触。本机球员不能被移出。
  */
 function memberRowHtml(p: PlayerInfo, inner: string, manage: boolean): string {
@@ -42,7 +42,7 @@ function memberRowHtml(p: PlayerInfo, inner: string, manage: boolean): string {
       ? `<button class="act-host" data-pid="${p.id}" title="${t('play.makeOwner')}" aria-label="${t('play.makeOwner')}">${icon.home}</button>`
       : '';
   const kick = `<button class="act-kick" data-pid="${p.id}" title="${t('play.kick')}" aria-label="${t('play.kick')}">${icon.x}</button>`;
-  return `<li class="${off} swipe"><div class="row-main">${inner}</div><div class="row-actions">${host}${kick}</div></li>`;
+  return `<li class="${off} swipe"><div class="row-main" role="button" tabindex="0" aria-expanded="false" aria-label="${esc(t('play.managePlayer', { name: p.name }))}">${inner}</div><div class="row-actions">${host}${kick}</div></li>`;
 }
 
 export interface TeamCardOpts {
@@ -108,7 +108,7 @@ export function settingsSummary(st: Settings): string {
   return `${t(`mode.${st.mode}`)}${st.mode === 1 ? '' : ` · ${t('play.minutes', { n: st.duration / 60 })}`}${st.party ? ` · ${t(`party.${st.party}`)}` : ''} · AI ${LEVEL_NAME[st.level]}${st.autoFill ? ` · ${t('cfg.autoFill')}` : ''}`;
 }
 
-/** 绑定设置、添加 AI、换队，以及成员左滑与二次确认 */
+/** 绑定设置、添加 AI、换队，以及成员管理与二次确认 */
 export function bindLobby(root: HTMLElement, players: PlayerInfo[], act: LobbyActions) {
   root.querySelectorAll<HTMLButtonElement>('.cfg .chip').forEach((b) => {
     b.onclick = () => act.settings({ [b.dataset.k!]: Number(b.dataset.v) });
@@ -138,13 +138,14 @@ export function bindLobby(root: HTMLElement, players: PlayerInfo[], act: LobbyAc
   });
 }
 
-/** 左滑手势（触屏与鼠标拖动都行）；同时只展开一行 */
+/** 点击、键盘或左滑（触屏与鼠标拖动都行）；同时只展开一行 */
 function bindSwipe(root: HTMLElement) {
   const rows = [...root.querySelectorAll<HTMLElement>('li.swipe')];
   const shift = (li: HTMLElement, dx: number, animate: boolean) => {
     const main = li.querySelector<HTMLElement>('.row-main')!;
     main.style.transition = animate ? 'transform 0.18s ease-out' : 'none';
     main.style.transform = dx ? `translateX(${dx}px)` : '';
+    main.setAttribute('aria-expanded', String(dx < 0));
     li.classList.toggle('open', dx < 0);
     li.dataset.dx = String(dx);
   };
@@ -153,16 +154,34 @@ function bindSwipe(root: HTMLElement) {
     let x0 = 0;
     let base = 0;
     let dragging = false;
+    let moved = false;
+    const main = li.querySelector<HTMLElement>('.row-main')!;
+    const toggle = () => {
+      for (const other of rows) if (other !== li) shift(other, 0, true);
+      shift(li, Number(li.dataset.dx || 0) < 0 ? 0 : -width(), true);
+    };
+    li.onclick = (e) => {
+      if (!(e.target as HTMLElement).closest('.row-actions') && (!moved || e.detail === 0)) toggle();
+    };
+    main.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggle();
+    };
     li.addEventListener('pointerdown', (e) => {
-      if ((e.target as HTMLElement).closest('.row-actions')) return;
+      if (e.button !== 0 || (e.target as HTMLElement).closest('.row-actions')) return;
       for (const other of rows) if (other !== li) shift(other, 0, true);
       dragging = true;
+      moved = false;
       x0 = e.clientX;
       base = Number(li.dataset.dx || 0);
       li.setPointerCapture(e.pointerId);
     });
     li.addEventListener('pointermove', (e) => {
-      if (dragging) shift(li, Math.max(-width(), Math.min(0, base + e.clientX - x0)), false);
+      if (!dragging) return;
+      if (Math.abs(e.clientX - x0) > 5) moved = true;
+      shift(li, Math.max(-width(), Math.min(0, base + e.clientX - x0)), false);
     });
     const end = () => {
       if (!dragging) return;

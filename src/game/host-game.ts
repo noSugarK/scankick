@@ -81,6 +81,7 @@ export class HostGame {
   private pendingEnd: Pick<EndInfo, 'reason' | 'winner'> | null = null;
   /** 本场个人数据；中途离开的球员也保留 */
   private stats = new Map<number, PlayerStat>();
+  private departedStats: PlayerStat[] = [];
   private timers: number[] = [];
   private pinFails: number[] = [];
   /** 被踢玩家的 token：本局房间内不能再加入 */
@@ -147,7 +148,7 @@ export class HostGame {
         s.info.online = false;
         this.votes[s.info.team].delete(s.info.id);
         s.offlineAt = performance.now();
-        this.sim.setInput(s.info.id, { jx: 0, jy: 0, btn: 0 });
+        this.sim.resetInput(s.info.id);
         this.sim.inactive.add(s.info.id);
         this.rosterChanged();
       },
@@ -209,12 +210,19 @@ export class HostGame {
     const slot: Slot = { info: { ...info, id, num: 0 }, token, cid: null, offlineAt: 0 };
     this.slots.set(id, slot);
     this.sim.addPlayer(id, info.team);
+    if (this.inMatch()) this.stat(id);
     return slot;
   }
 
   private removeSlot(id: number) {
     const s = this.slots.get(id);
     if (!s) return;
+    const stat = this.stats.get(id);
+    if (stat) {
+      // 球员 ID 会复用，离场统计用独立 ID，避免新人继承战绩或改写旧名字。
+      this.departedStats.push({ ...stat, id: 256 + this.departedStats.length, name: s.info.name, team: s.info.team });
+      this.stats.delete(id);
+    }
     if (s.cid) this.byCid.delete(s.cid);
     this.slots.delete(id);
     this.sim.removePlayer(id);
@@ -251,6 +259,7 @@ export class HostGame {
     const name = String(h.name || t('player.default')).slice(0, 12);
     const existing = [...this.slots.values()].find((s) => s.token && s.token === h.token);
     if (existing) {
+      if (existing.cid !== cid) this.sim.resetInput(existing.info.id);
       if (existing.cid && existing.cid !== cid) {
         this.byCid.delete(existing.cid);
         this.net.drop(existing.cid);
@@ -570,6 +579,7 @@ export class HostGame {
     this.goalText = '';
     this.rebalanceBots();
     this.stats.clear();
+    this.departedStats = [];
     for (const id of this.slots.keys()) this.stat(id);
     this.sim.startMatch(this.settings.duration, this.settings.mode, this.settings.party);
     this.rosterChanged();
@@ -697,7 +707,7 @@ export class HostGame {
 
   /** 结束时整理个人数据：还在场的人用最新的名字和队伍，按队伍和评分排序，并选出 MVP */
   private finalStats(): Pick<EndInfo, 'stats' | 'mvp'> {
-    const list = [...this.stats.values()].map((st) => {
+    const list = [...this.departedStats, ...this.stats.values()].map((st) => {
       const s = this.slots.get(st.id);
       return s ? { ...st, name: s.info.name, team: s.info.team } : { ...st };
     });

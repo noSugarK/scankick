@@ -54,25 +54,29 @@ class RemotePeer {
     this.fast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 });
     for (const ch of [this.ctl, this.fast]) {
       ch.binaryType = 'arraybuffer';
-      ch.onopen = () => pc === this.pc && this.checkOpen();
-      ch.onmessage = (e) => this.host.receive(this.cid, e.data);
-      ch.onclose = () => pc === this.pc && this.onP2PDown();
+      ch.onopen = () => !this.closed && pc === this.pc && this.checkOpen();
+      ch.onmessage = (e) => {
+        if (!this.closed && pc === this.pc) this.host.receive(this.cid, e.data);
+      };
+      ch.onclose = () => !this.closed && pc === this.pc && this.onP2PDown();
     }
     pc.onicecandidate = (e) => {
-      if (pc === this.pc) this.host.signal.pub(`c/${this.cid}`, { t: 'ice', c: e.candidate ? e.candidate.toJSON() : null });
+      if (!this.closed && pc === this.pc) this.host.signal.pub(`c/${this.cid}`, { t: 'ice', c: e.candidate ? e.candidate.toJSON() : null });
     };
     pc.onconnectionstatechange = () => {
-      if (pc === this.pc && pc.connectionState === 'failed') this.onP2PDown();
+      if (!this.closed && pc === this.pc && pc.connectionState === 'failed') this.onP2PDown();
     };
   }
 
   async start() {
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-    // 公共 MQTT 偶尔丢消息：未收到 answer 时每 2.5 秒重发同一 offer
     const pc = this.pc;
+    const offer = await pc.createOffer();
+    if (pc !== this.pc || this.closed) return;
+    await pc.setLocalDescription(offer);
+    if (pc !== this.pc || this.closed) return;
+    // 公共 MQTT 偶尔丢消息：未收到 answer 时每 2.5 秒重发同一 offer
     const send = () => {
-      if (pc !== this.pc || pc.signalingState !== 'have-local-offer') return;
+      if (pc !== this.pc || this.closed || pc.signalingState !== 'have-local-offer') return;
       this.host.signal.pub(`c/${this.cid}`, { t: 'offer', sdp: offer.sdp });
       setTimeout(send, 2500);
     };
@@ -80,11 +84,12 @@ class RemotePeer {
   }
 
   private lastRetry = 0;
+  private closed = false;
 
   /** 手机端点状态标签请求重试直连：立即重建，并重置定时重试；3 秒内重复请求忽略 */
   retryNow() {
     const now = performance.now();
-    if (this.mode !== 'relay' || now - this.lastRetry < 3000) return;
+    if (this.closed || this.mode !== 'relay' || now - this.lastRetry < 3000) return;
     clearInterval(this.retryTimer);
     this.retryTimer = window.setInterval(() => this.retryP2P(), 15000);
     this.retryP2P();
@@ -92,7 +97,7 @@ class RemotePeer {
 
   /** 中继期间定期重建 P2P（例如手机从后台恢复、网络切换后） */
   private retryP2P() {
-    if (this.mode !== 'relay') return;
+    if (this.closed || this.mode !== 'relay') return;
     this.lastRetry = performance.now();
     this.pc.close();
     this.setupPc();
@@ -121,7 +126,7 @@ class RemotePeer {
   }
 
   setMode(m: LinkMode) {
-    if (this.mode === m) return;
+    if (this.closed || this.mode === m) return;
     this.mode = m;
     this.lastSeen = performance.now(); // 切换链路时给对端一个完整的超时窗口
     clearTimeout(this.relayTimer);
@@ -144,6 +149,7 @@ class RemotePeer {
   }
 
   close() {
+    this.closed = true;
     clearTimeout(this.relayTimer);
     clearInterval(this.retryTimer);
     this.pc.close();
@@ -156,6 +162,7 @@ export class HostNet {
   private peers = new Map<string, RemotePeer>();
   private relaySnapCounter = 0;
   private watchdog = 0;
+  private closed = false;
 
   constructor(
     readonly room: string,
@@ -165,8 +172,11 @@ export class HostNet {
   }
 
   async start() {
+    this.closed = false;
     await this.signal.connect();
+    if (this.closed) { this.signal.close(); return; }
     this.signal.onMessage((topic, payload) => {
+      if (this.closed) return;
       const t = this.signal.local(topic);
       if (!t.startsWith('h/')) return;
       const cid = t.slice(2);
@@ -276,6 +286,7 @@ export class HostNet {
   }
 
   close() {
+    this.closed = true;
     clearInterval(this.watchdog);
     for (const p of this.peers.values()) p.close();
     this.peers.clear();

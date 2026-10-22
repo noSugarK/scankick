@@ -151,7 +151,7 @@ export class Renderer {
       const x = s * F.HL;
       const back = s * (F.HL + F.GD);
       ctx.strokeStyle = '#f4f4f4';
-      ctx.lineWidth = 4;
+      ctx.lineWidth = F.FRAME_R * 2;
       ctx.beginPath();
       ctx.moveTo(x, -F.GW);
       ctx.lineTo(back, -F.GW);
@@ -165,6 +165,8 @@ export class Renderer {
         ctx.fill();
         ctx.strokeStyle = 'rgba(0,0,0,0.35)';
         ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, F.POST_R - ctx.lineWidth / 2, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
@@ -205,7 +207,7 @@ export class Renderer {
     ctx.strokeStyle = '#222';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(b.x, b.y, r, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, r - ctx.lineWidth / 2, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -244,6 +246,8 @@ export class Renderer {
     ctx.fill();
     ctx.strokeStyle = TEAM_DARK[team];
     ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r - ctx.lineWidth / 2, 0, Math.PI * 2);
     ctx.stroke();
 
     // 朝向指示

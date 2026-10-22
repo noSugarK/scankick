@@ -68,7 +68,14 @@ export function bindSiteTools(root: HTMLElement) {
   };
   const menu = root.querySelector<HTMLDetailsElement>('.dl-menu');
   if (menu) {
-    menu.addEventListener('toggle', () => menu.open && void loadDownloads(menu), { once: true });
+    let loading = false;
+    let loaded = false;
+    menu.addEventListener('toggle', async () => {
+      if (!menu.open || loading || loaded) return;
+      loading = true;
+      loaded = await loadDownloads(menu);
+      loading = false;
+    });
     document.addEventListener('click', (e) => !menu.contains(e.target as Node) && (menu.open = false));
   }
   const sel = root.querySelector<HTMLSelectElement>('.lang-select')!;
@@ -95,8 +102,10 @@ const PLATFORMS: [RegExp, string, string][] = [
 /** 预发布不算 GitHub 的 latest，直接取最新一个发布 */
 async function loadDownloads(menu: HTMLElement) {
   const msg = menu.querySelector('.dl-msg')!;
+  msg.textContent = t('dl.loading');
   try {
     const res = await fetch('https://api.github.com/repos/noSugarK/scankick/releases?per_page=1');
+    if (!res.ok) throw new Error('release request failed');
     const [release] = (await res.json()) as { tag_name: string; assets: { name: string; browser_download_url: string; size: number }[] }[];
     const links = PLATFORMS.flatMap(([re, label, logo]) => {
       const asset = release.assets.find((a) => re.test(a.name));
@@ -104,8 +113,10 @@ async function loadDownloads(menu: HTMLElement) {
     });
     if (!links.length) throw new Error('no assets');
     msg.outerHTML = `<p class="dl-msg">${release.tag_name}</p>${links.join('')}`;
+    return true;
   } catch {
     msg.textContent = t('dl.failed');
+    return false;
   }
 }
 

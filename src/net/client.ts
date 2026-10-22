@@ -29,6 +29,7 @@ export class ClientNet {
   private relay = false;
   private lastOffer = '';
   private lastAnswer = '';
+  private closed = false;
   state: ClientState = 'signal';
   /** 调试：忽略 offer，强制走 MQTT 中继 */
   forceRelay = false;
@@ -47,8 +48,10 @@ export class ClientNet {
   }
 
   async start() {
+    this.closed = false;
     this.setState('signal');
     await this.signal.connect();
+    if (this.closed) { this.signal.close(); return; }
     this.signal.onMessage((topic, payload) => this.onSignal(this.signal.local(topic), payload));
     this.signal.onStatus = (ok) => {
       // 断网恢复后 mqtt.js 会自动重订阅；若已失联则重新握手
@@ -80,6 +83,7 @@ export class ClientNet {
 
   /** 失联后用新的 cid 重新握手；token 不变，主机会恢复原来的球员 */
   restart() {
+    if (this.closed) return;
     this.teardownPeer();
     this.signal.unsub(`c/${this.cid}`);
     this.signal.unsub('bc');
@@ -89,20 +93,20 @@ export class ClientNet {
   }
 
   private watch() {
+    if (this.closed) return;
     const idle = performance.now() - this.lastRecv;
     if ((this.state === 'p2p' || this.state === 'relay') && idle > 5000) {
       this.setState('lost');
       this.restart();
     } else if (this.state === 'waiting' && !this.answered && idle > 10000) {
-      clearInterval(this.helloTimer);
-      this.setState('rejected');
-      this.onReject('notFound');
+      this.reject('notFound');
     } else if (this.state === 'lost' || (this.state === 'connecting' && idle > CONFIG.p2pTimeoutMs + 6000)) {
       this.restart();
     }
   }
 
   private async onSignal(topic: string, payload: Uint8Array) {
+    if (this.closed) return;
     if (topic === 'bc') {
       if (this.relay && !this.p2pOpen()) {
         this.lastRecv = performance.now();
@@ -119,7 +123,10 @@ export class ClientNet {
       case 'offer':
         clearInterval(this.helloTimer);
         if (this.forceRelay) this.setState('connecting');
-        else await this.onOffer(msg.sdp);
+        else {
+          try { await this.onOffer(msg.sdp); }
+          catch { /* 过期协商或直连失败时，等待主机切换到中继。 */ }
+        }
         return;
       case 'ice':
         try {
@@ -139,9 +146,7 @@ export class ClientNet {
         }
         return;
       case 'reject':
-        clearInterval(this.helloTimer);
-        this.setState('rejected');
-        this.onReject(msg.reason);
+        this.reject(msg.reason);
         return;
       case 'welcome':
         clearInterval(this.helloTimer);
@@ -165,20 +170,25 @@ export class ClientNet {
     if (!this.relay) this.setState('connecting');
     const pc = new RTCPeerConnection({ iceServers: CONFIG.iceServers });
     this.pc = pc;
-    pc.onicecandidate = (e) =>
-      this.signal.pub(`h/${this.cid}`, { t: 'ice', c: e.candidate ? e.candidate.toJSON() : null });
+    pc.onicecandidate = (e) => {
+      if (pc === this.pc) this.signal.pub(`h/${this.cid}`, { t: 'ice', c: e.candidate ? e.candidate.toJSON() : null });
+    };
     pc.ondatachannel = (e) => {
+      if (pc !== this.pc) return;
       const ch = e.channel;
       ch.binaryType = 'arraybuffer';
       if (ch.label === 'ctl') this.ctl = ch;
       else this.fast = ch;
       ch.onopen = () => {
+        if (pc !== this.pc) return;
         if (this.p2pOpen()) this.setState('p2p');
       };
       ch.onclose = () => {
+        if (pc !== this.pc) return;
         if (this.state === 'p2p') this.setState(this.relay ? 'relay' : 'lost');
       };
       ch.onmessage = (ev) => {
+        if (pc !== this.pc) return;
         this.lastRecv = performance.now();
         if (typeof ev.data === 'string') {
           try {
@@ -192,8 +202,11 @@ export class ClientNet {
       };
     };
     await pc.setRemoteDescription({ type: 'offer', sdp });
+    if (pc !== this.pc) return;
     const answer = await pc.createAnswer();
+    if (pc !== this.pc) return;
     await pc.setLocalDescription(answer);
+    if (pc !== this.pc) return;
     this.lastAnswer = answer.sdp ?? '';
     this.signal.pub(`h/${this.cid}`, { t: 'answer', sdp: answer.sdp });
   }
@@ -203,6 +216,7 @@ export class ClientNet {
    * 失联时直接重新握手。4 秒内重复点击忽略，返回是否真的发起了重试
    */
   retryDirect(): boolean {
+    if (this.closed) return false;
     const now = performance.now();
     if (now - this.lastRetry < 4000) return false;
     if (this.state === 'relay') this.signal.pub(`h/${this.cid}`, { t: 'p2p' });
@@ -217,23 +231,32 @@ export class ClientNet {
   }
 
   get linked() {
-    return this.state === 'p2p' || this.state === 'relay';
+    return !this.closed && (this.state === 'p2p' || this.state === 'relay');
   }
 
   sendInput(bin: Uint8Array) {
+    if (this.closed) return;
     // 输入包含按下和松开，走可靠有序通道；快照仍走 fast。
     if (this.p2pOpen()) this.ctl!.send(bin as Uint8Array<ArrayBuffer>);
     else if (this.relay) this.signal.pub(`h/${this.cid}`, bin, false, 1);
   }
 
   sendJson(obj: object) {
+    if (this.closed) return;
     if (this.p2pOpen()) this.ctl!.send(JSON.stringify(obj));
     else this.signal.pub(`h/${this.cid}`, obj);
   }
 
   private teardownPeer() {
-    this.pc?.close();
+    const pc = this.pc;
     this.pc = this.ctl = this.fast = null;
+    pc?.close();
+  }
+
+  private reject(reason: RejectReason) {
+    this.setState('rejected');
+    this.close();
+    this.onReject(reason);
   }
 
   private setState(s: ClientState) {
@@ -243,6 +266,8 @@ export class ClientNet {
   }
 
   close() {
+    if (this.closed) return;
+    this.closed = true;
     clearInterval(this.helloTimer);
     clearInterval(this.watchTimer);
     this.signal.pub(`h/${this.cid}`, { t: 'bye' });

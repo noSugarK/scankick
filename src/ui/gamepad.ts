@@ -121,8 +121,8 @@ export class Gamepad {
     const end = (e: PointerEvent) => {
       if (e.pointerId !== this.joyId) return;
       this.joyId = null;
-      this.input.jx = this.input.jy = 0;
       this.restBase();
+      this.syncKeys();
     };
     z.addEventListener('pointerup', end);
     z.addEventListener('pointercancel', end);
@@ -184,7 +184,7 @@ export class Gamepad {
 
   private bindKeyboard() {
     window.addEventListener('keydown', (e) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if ((e.target as HTMLElement)?.closest?.('input, textarea, select, button, [role="button"], a[href], [contenteditable]')) return;
       if (KEY_BITS[e.code] || KEY_DIRS[e.code]) e.preventDefault();
       if (e.repeat) return;
       this.keys.add(e.code);

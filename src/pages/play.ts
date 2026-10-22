@@ -2,7 +2,7 @@ import QRCode from 'qrcode';
 import { HostGame } from '../game/host-game';
 import { Renderer, TEAM_COLOR, TEAM_NAME, goalText as goalLabel, type ViewState } from '../game/render';
 import { resultLineHtml, statsTabHtml } from '../ui/stats-ui';
-import { predictMove } from '../game/sim';
+import { constrainPlayerBounds, predictMove } from '../game/sim';
 import {
   BTN_A,
   BTN_B,
@@ -21,7 +21,7 @@ import { LanClient } from '../net/lan-client';
 import { LanHost } from '../net/lan-host';
 import { lanSession } from '../net/lan-session';
 import { bindLanAddress, lanInfoHtml } from '../ui/lan-room';
-import { SnapBuffer } from '../net/interp';
+import { SnapBuffer, separateViewBall, separateViewPlayers } from '../net/interp';
 import { decodeSnapshot, encodeInput } from '../net/protocol';
 import { CONFIG } from '../config';
 import { t, type Key } from '../i18n';
@@ -94,8 +94,8 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
       <img class="join-logo" src="${brand('logo-dark.png')}" alt="${t('app.name')}">
       ${isHost ? `<h1>${t('play.noScreen')}</h1>` : ''}
       <p class="muted">${isHost ? t('play.noScreenDesc') : t('play.room', { room: `<b>${esc(room)}</b>` })}</p>
-      <input class="name" maxlength="12" value="${esc(savedName)}" placeholder="${t('play.name')}">
-      <input class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="${t('play.pin')}"
+      <input class="name" maxlength="12" value="${esc(savedName)}" placeholder="${t('play.name')}" aria-label="${t('play.name')}">
+      <input class="pin" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="${t('play.pin')}" aria-label="${t('play.pin')}"
         value="${esc(store.get(pinKey, false) ?? '')}" ${askPin ? '' : 'hidden'}>
       <div class="seg">
         <button data-team="0" style="--c:${TEAM_COLOR[0]}">${TEAM_NAME[0]}</button>
@@ -169,7 +169,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
 
   function setStatus(s: ClientState) {
     // 中继或失联时状态标签可点：手动重试直连
-    const retry = s === 'relay' || s === 'lost';
+    const retry = joinEl.hidden && (s === 'relay' || s === 'lost');
     statusEl.className = `status ${s}${retry ? ' retry' : ''}`;
     const ping = (s === 'p2p' || s === 'relay' || s === 'lan') && rtt ? ` ${Math.round(rtt)}ms` : '';
     const role = watching ? `${t('play.watching')} · ` : '';
@@ -222,37 +222,65 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     const pin = (pinEl.hidden ? urlPin : pinEl.value.replace(/\D/g, '')) || undefined;
     if (!pinEl.hidden) store.set(pinKey, pin ?? '', false);
     net?.close();
+    pad.reset();
+    buf.reset();
+    pred.ok = false;
+    rtt = 0;
+    meId = -1;
+    lastPhase = -1;
+    roster = null;
+    players = [];
+    history = [];
+    panelOpen = false;
+    panel.hidden = true;
     const Connection = mode.kind === 'client' && mode.lan ? LanClient : ClientNet;
-    net = new Connection(room, { token, name, team, pin, watch });
-    net.forceRelay = forceRelay;
+    const connection = new Connection(room, { token, name, team, pin, watch });
+    net = connection;
+    setWatching(watch);
+    connection.forceRelay = forceRelay;
     buf.delay = 60;
-    net.onState = (s) => {
+    const showJoin = () => {
+      connection.close();
+      pad.reset();
+      buf.reset();
+      pred.ok = false;
+      joinEl.hidden = false;
+      panel.hidden = true;
+      $('.play').classList.remove('joined');
+      store.set(joinedKey, '', false);
+    };
+    connection.onState = (s) => {
+      if (net !== connection) return;
       setStatus(s);
       buf.delay = s === 'relay' ? 140 : 60;
       if (s === 'lost' || s === 'rejected') {
         pad.reset();
         buf.reset();
+        pred.ok = false;
       }
     };
-    net.onReject = (r) => {
+    connection.onReject = (r) => {
+      if (net !== connection) return;
+      showJoin();
       toast(t(`reject.${r}`, { n: CONFIG.maxPerTeam * 2 }), 5000);
-      joinEl.hidden = false;
-      store.set(joinedKey, '', false);
       if (r.startsWith('pin')) {
         pinEl.hidden = false;
         pinEl.value = '';
         pinEl.focus();
       }
     };
-    net.onBinary = (d) => {
+    connection.onBinary = (d) => {
+      if (net !== connection) return;
       const s = decodeSnapshot(d);
       if (s) buf.push(s, performance.now());
     };
-    net.onJson = onMsg;
+    connection.onJson = (m) => { if (net === connection) onMsg(m); };
     setStatus(mode.kind === 'client' && mode.lan ? 'connecting' : 'signal');
     try {
-      await net.start();
+      await connection.start();
     } catch {
+      if (net !== connection) return;
+      showJoin();
       setStatus('lost');
       toast(t('play.signalFail'), 6000);
     }
@@ -479,6 +507,14 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     }
   };
   $('.go').onclick = () => go(false);
+  app.querySelectorAll<HTMLInputElement>('.join input').forEach((input) => {
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.isComposing) {
+        e.preventDefault();
+        go(false);
+      }
+    };
+  });
   const watchGo = app.querySelector<HTMLElement>('.watch-go');
   if (watchGo) watchGo.onclick = () => go(true);
 
@@ -524,7 +560,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     if (snap) {
       const view: ViewState = game ? (snap as ViewState) : { ...snap, info: new Map(players.map((p) => [p.id, p])), meId, goalText };
       if (!game) applyPrediction(view, dt, now);
-      renderer.draw(view, dt);
+      renderer.draw(game ? view : separateViewBall(separateViewPlayers(view)), dt);
       if (snap.phase !== lastPhase) {
         lastPhase = snap.phase;
         // 进入大厅/结算时自动弹出菜单，开赛时自动收起；玩家随时可以手动关闭或打开
@@ -542,7 +578,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     if (!latest || i < 0) return;
     const server = latest.s.players.find((p) => p.id === meId);
     if (!server) return;
-    const ahead = Math.min(0.25, (now - latest.recv + rtt) / 1000);
+    const ahead = Math.min(0.25, (now - latest.recv + rtt / 2) / 1000);
     const sx = server.x + server.vx * ahead;
     const sy = server.y + server.vy * ahead;
     const frozen = view.phase === Phase.Ready || view.phase === Phase.Ended || server.flags & (FLAG_STUN | FLAG_TACKLE);
@@ -563,6 +599,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
         pred.y += ey * k;
       }
     }
+    constrainPlayerBounds(pred);
     const mag = Math.hypot(pad.input.jx, pad.input.jy);
     view.players[i] = {
       ...view.players[i],

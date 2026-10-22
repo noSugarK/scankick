@@ -31,8 +31,12 @@ export class LanClient {
     this.setState('connecting');
     ws.binaryType = 'arraybuffer';
     this.lastRecv = performance.now();
-    ws.onopen = () => this.sendJson({ t: 'hello', ...this.info });
+    ws.onopen = () => {
+      if (this.socket !== ws || this.closed || this.rejected) return;
+      this.sendJson({ t: 'hello', ...this.info });
+    };
     ws.onmessage = (event) => {
+      if (this.socket !== ws || this.closed || this.rejected) return;
       this.lastRecv = performance.now();
       if (typeof event.data === 'string') {
         try {
@@ -65,7 +69,7 @@ export class LanClient {
     this.timer = window.setTimeout(watch, 2000);
   }
 
-  get linked() { return this.state === 'lan'; }
+  get linked() { return !this.closed && !this.rejected && this.state === 'lan'; }
   sendInput(data: Uint8Array) {
     if (this.linked && this.socket?.readyState === WebSocket.OPEN) this.socket.send(data as Uint8Array<ArrayBuffer>);
   }
@@ -73,7 +77,7 @@ export class LanClient {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message));
   }
   retryDirect() {
-    if (this.state !== 'lost') return false;
+    if (this.closed || this.rejected || this.state !== 'lost') return false;
     clearTimeout(this.timer);
     this.socket?.close();
     this.connect();

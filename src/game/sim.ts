@@ -26,6 +26,7 @@ export const F = {
   PR: 17, // 球员半径
   BR: 10, // 球半径
   POST_R: 6,
+  FRAME_R: 2, // 4px 球门框的半厚度
   CENTER_R: 80,
   BOX_D: 130, // 禁区深度
   BOX_W: 180, // 禁区半宽
@@ -66,6 +67,7 @@ export interface SimPlayer {
   kickBuf: number;
   kickPower: number;
   passBuf: number;
+  tackleBuf: number;
   tackleT: number;
   tackleCd: number;
   stunT: number;
@@ -130,6 +132,7 @@ export class Sim {
       kickBuf: 0,
       kickPower: 0,
       passBuf: 0,
+      tackleBuf: 0,
       tackleT: 0,
       tackleCd: 0,
       stunT: 0,
@@ -149,6 +152,8 @@ export class Sim {
   removePlayer(id: number) {
     this.players.delete(id);
     this.inactive.delete(id);
+    if (this.ball.lastTouch === id) this.ball.lastTouch = -1;
+    if (this.ball.prevTouch === id) this.ball.prevTouch = -1;
     this.reslot();
   }
 
@@ -169,6 +174,14 @@ export class Sim {
       else p.inputQueue.push({ ...input });
     }
     p.input = { ...input };
+  }
+
+  /** 断线或连接替换时取消操作，不把清理当作松开射门键。 */
+  resetInput(id: number) {
+    const p = this.players.get(id);
+    if (!p) return;
+    p.inputQueue.length = 0;
+    Object.assign(p, { input: NO_INPUT, prevBtn: 0, charge: -1, kickBuf: 0, passBuf: 0, tackleBuf: 0 });
   }
 
   teamPlayers(team: Team) {
@@ -233,7 +246,7 @@ export class Sim {
           x = (team === 0 ? -1 : 1) * (F.PR + this.ballRadius + 4);
           y = 0;
         }
-        Object.assign(p, { x, y, vx: 0, vy: 0, angle: team === 0 ? 0 : Math.PI, charge: -1, tackleT: 0, stunT: 0 });
+        Object.assign(p, { x, y, vx: 0, vy: 0, angle: team === 0 ? 0 : Math.PI, charge: -1, kickBuf: 0, passBuf: 0, tackleBuf: 0, tackleT: 0, stunT: 0 });
       });
     }
   }
@@ -246,34 +259,54 @@ export class Sim {
     for (const p of this.players.values()) this.updatePlayer(p, dt, frozen);
 
     if (!frozen) {
-      for (const p of this.players.values()) {
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-      }
       const b = this.ball;
       const damp = Math.pow(this.party === 3 ? 0.85 : BALL_DAMP, dt);
       b.vx *= damp;
       b.vy *= damp;
 
-      this.collidePlayers();
-      // 每次最多移动半个球半径，避免高速球穿过门柱或底线。
+      // 球和球员共同子步，限制相对位移，铲球也不能穿过静止足球。
       let remaining = dt;
       while (remaining > 0) {
-        const part = Math.min(remaining, this.ballRadius / 2 / Math.max(1, Math.hypot(b.vx, b.vy)));
+        const playerSpeed = Math.max(0, ...[...this.players.values()].map((p) => Math.hypot(p.vx, p.vy)));
+        const part = Math.min(remaining, Math.min(F.PR, this.ballRadius) / 2 / Math.max(1, Math.hypot(b.vx, b.vy) + playerSpeed));
         const prevX = b.x;
         const prevY = b.y;
+        for (const p of this.players.values()) {
+          p.x += p.vx * part;
+          p.y += p.vy * part;
+        }
         b.x += b.vx * part;
         b.y += b.vy * part;
-        for (const p of this.players.values()) this.collidePlayerBall(p);
-        this.collidePosts();
-        this.constrainBall(prevX, prevY);
+        this.resolveContacts(prevX, prevY);
         remaining -= part;
       }
       for (const p of this.players.values()) this.tryKick(p);
-      for (const p of this.players.values()) this.constrainPlayer(p);
     }
 
     this.updatePhase(dt);
+  }
+
+  private resolveContacts(prevX: number, prevY: number) {
+    const players = [...this.players.values()];
+    // ponytail: 最多八人，128 轮封顶；提高人数上限时再换接触图求解。
+    // 反复求解同一组约束，避免后一个接触或边界把球推回前一个人内。
+    for (let pass = 0; pass < 128; pass++) {
+      this.collidePlayers();
+      for (const p of players) this.constrainPlayer(p);
+      for (const p of players) this.collidePlayerBall(p);
+      let adjusted = this.collidePosts();
+      for (const p of players) adjusted = this.constrainPlayer(p) || adjusted;
+      adjusted = this.constrainBall(prevX, prevY) || adjusted;
+      let overlap = false;
+      for (let i = 0; i < players.length && !overlap; i++) {
+        const p = players[i];
+        overlap = Math.hypot(this.ball.x - p.x, this.ball.y - p.y) < F.PR + this.ballRadius;
+        for (let j = i + 1; j < players.length && !overlap; j++) {
+          overlap = Math.hypot(players[j].x - p.x, players[j].y - p.y) < F.PR * 2;
+        }
+      }
+      if (!overlap && !adjusted) return;
+    }
   }
 
   private updatePlayer(p: SimPlayer, dt: number, frozen: boolean) {
@@ -282,7 +315,10 @@ export class Sim {
       p.exhausted = false;
     }
     const inp = frozen ? NO_INPUT : (p.inputQueue.shift() ?? p.input);
-    if (frozen) p.inputQueue.length = 0;
+    if (frozen) {
+      p.inputQueue.length = 0;
+      p.tackleBuf = 0;
+    }
     const pressed = inp.btn & ~p.prevBtn;
     const released = ~inp.btn & p.prevBtn;
     p.prevBtn = inp.btn;
@@ -291,6 +327,7 @@ export class Sim {
     p.tackleCd = Math.max(0, p.tackleCd - dt);
     p.kickBuf = Math.max(0, p.kickBuf - dt);
     p.passBuf = Math.max(0, p.passBuf - dt);
+    p.tackleBuf = Math.max(0, p.tackleBuf - dt);
 
     let jx = inp.jx;
     let jy = inp.jy;
@@ -319,17 +356,26 @@ export class Sim {
 
     if (mag > 0.2) p.angle = Math.atan2(jy, jx);
 
-    // 射门：按下开始蓄力，松开出脚（带 0.15s 缓冲，球稍晚到脚下也能踢到）
-    if (pressed & BTN_B) p.charge = 0;
+    // 传射缓冲至少覆盖剩余出脚冷却，只保留最近一次操作。
+    if (pressed & BTN_B) {
+      p.charge = 0;
+      p.kickBuf = p.passBuf = 0;
+    }
     if (p.charge >= 0 && inp.btn & BTN_B) p.charge = Math.min(1, p.charge + dt / CHARGE_TIME);
     if (released & BTN_B && p.charge >= 0) {
       p.kickPower = SHOT_MIN + (SHOT_MAX - SHOT_MIN) * p.charge;
-      p.kickBuf = 0.15;
+      p.kickBuf = Math.max(0.15, p.kickCd + dt);
+      p.passBuf = 0;
       p.charge = -1;
     }
-    if (pressed & BTN_A) p.passBuf = 0.2;
+    if (pressed & BTN_A) {
+      p.passBuf = Math.max(0.2, p.kickCd + dt);
+      p.kickBuf = 0;
+    }
 
-    if (pressed & BTN_Y && p.tackleCd <= 0) {
+    if (pressed & BTN_Y) p.tackleBuf = 0.15;
+    if (p.tackleBuf > 0 && p.tackleCd <= 0) {
+      p.tackleBuf = 0;
       p.tackleT = 0.24;
       p.tackleCd = 1.4;
       p.charge = -1;
@@ -362,10 +408,10 @@ export class Sim {
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         const d = Math.hypot(dx, dy);
-        if (d >= minD || d === 0) continue;
-        dx /= d;
-        dy /= d;
-        const pen = (minD - d) / 2;
+        if (d >= minD) continue;
+        dx = d ? dx / d : 1;
+        dy = d ? dy / d : 0;
+        const pen = (minD - d + 0.001) / 2;
         a.x -= dx * pen;
         a.y -= dy * pen;
         b.x += dx * pen;
@@ -407,8 +453,12 @@ export class Sim {
       dx /= d;
       dy /= d;
     }
-    b.x = p.x + dx * minD;
-    b.y = p.y + dy * minD;
+    // 位置修正也按球员质量 5、球质量 1 分摊，多人夹球时允许球员让出空间。
+    const pen = minD - d + 0.001;
+    b.x += dx * pen * (5 / 6);
+    b.y += dy * pen * (5 / 6);
+    p.x -= dx * pen / 6;
+    p.y -= dy * pen / 6;
     this.touch(p);
     if (p.tackleT > 0) {
       // 铲球：把球捅向前方
@@ -513,14 +563,17 @@ export class Sim {
       [F.HL, F.GW],
     ];
     const b = this.ball;
+    let hit = false;
     for (const [px, py] of posts) {
-      circleStatic(b, this.ballRadius, px, py, F.POST_R, this.party === 3 ? 0.95 : 0.6);
-      for (const p of this.players.values()) circleStatic(p, F.PR, px, py, F.POST_R, 0.2);
+      hit = circleStatic(b, this.ballRadius, px, py, F.POST_R, this.party === 3 ? 0.95 : 0.6) || hit;
     }
+    return hit;
   }
 
   private constrainBall(prevX: number, prevY: number) {
     const b = this.ball;
+    const x = b.x;
+    const y = b.y;
     const r = this.ballRadius;
     const bounce = this.party === 3 ? 0.95 : 0.7;
     // 先检查进入球门的轨迹，再约束球网内部；不能把底线外的球夹进门。
@@ -557,31 +610,13 @@ export class Sim {
         b.vx *= -bounce;
       }
     }
+    return b.x !== x || b.y !== y;
   }
 
   private constrainPlayer(p: SimPlayer) {
-    const mx = F.HL + F.MARGIN - F.PR;
-    const my = F.HW + F.MARGIN - F.PR;
-    if (Math.abs(p.x) > mx) {
-      p.x = Math.sign(p.x) * mx;
-      p.vx = 0;
-    }
-    if (Math.abs(p.y) > my) {
-      p.y = Math.sign(p.y) * my;
-      p.vy = 0;
-    }
-    // 球员不能进入球门
-    const penX = Math.abs(p.x) - (F.HL - F.PR * 0.2);
-    const penY = F.GW + F.PR - Math.abs(p.y);
-    if (penX > 0 && penY > 0) {
-      if (penX < penY) {
-        p.x -= Math.sign(p.x) * penX;
-        p.vx = 0;
-      } else {
-        p.y += Math.sign(p.y || 1) * penY;
-        p.vy = 0;
-      }
-    }
+    const x = p.x;
+    const y = p.y;
+    constrainPlayerBounds(p);
     // 开球前：双方留在本方半场，防守方不得进入中圈
     if (this.kickoffPending && this.phase === Phase.Playing) {
       const s = p.team === 0 ? -1 : 1;
@@ -599,6 +634,7 @@ export class Sim {
         }
       }
     }
+    return p.x !== x || p.y !== y;
   }
 
   private updatePhase(dt: number) {
@@ -607,7 +643,10 @@ export class Sim {
     switch (this.phase) {
       case Phase.Lobby:
         // 大厅热身：进球不计分，球回到中圈
-        if (crossed) Object.assign(b, { x: 0, y: 0, vx: 0, vy: 0 });
+        if (crossed) {
+          Object.assign(b, { x: 0, y: 0, vx: 0, vy: 0 });
+          this.resolveContacts(0, 0);
+        }
         break;
       case Phase.Ready:
         if (this.phaseTime >= 1.5) {
@@ -681,21 +720,78 @@ export class Sim {
   }
 }
 
+/** 物理与手机预测共用：球员圆不能越界，也不能与球网实体或门柱相交。 */
+export function constrainPlayerBounds(p: { x: number; y: number; vx: number; vy: number }) {
+  const x = p.x;
+  const y = p.y;
+  const mx = F.HL + F.MARGIN - F.PR;
+  const my = F.HW + F.MARGIN - F.PR;
+  if (Math.abs(p.x) > mx) {
+    p.x = Math.sign(p.x) * mx;
+    p.vx = 0;
+  }
+  if (Math.abs(p.y) > my) {
+    p.y = Math.sign(p.y) * my;
+    p.vy = 0;
+  }
+  const front = F.HL - F.FRAME_R;
+  const back = F.HL + F.GD + F.FRAME_R;
+  const side = F.GW + F.FRAME_R;
+  for (const sign of [-1, 1]) {
+    const localX = p.x * sign;
+    let dx = localX - Math.max(front, Math.min(back, localX));
+    let dy = p.y - Math.max(-side, Math.min(side, p.y));
+    const distance = Math.hypot(dx, dy);
+    if (distance < F.PR) {
+      let push = F.PR - distance;
+      if (distance > 0) {
+        dx /= distance;
+        dy /= distance;
+      } else {
+        // 初态落在实体内时，选跑动边界内最近的出口，不能推到不可达的门后。
+        push = localX - front + F.PR;
+        dx = -1;
+        dy = 0;
+        if (back + F.PR <= mx && back - localX + F.PR < push) {
+          push = back - localX + F.PR;
+          dx = 1;
+        }
+        if (side - Math.abs(p.y) + F.PR < push) {
+          push = side - Math.abs(p.y) + F.PR;
+          dx = 0;
+          dy = Math.sign(p.y || 1);
+        }
+      }
+      dx *= sign;
+      p.x += dx * (push + 0.001);
+      p.y += dy * (push + 0.001);
+      const speed = p.vx * dx + p.vy * dy;
+      if (speed < 0) {
+        p.vx -= speed * dx;
+        p.vy -= speed * dy;
+      }
+    }
+    for (const postY of [-F.GW, F.GW]) circleStatic(p, F.PR, sign * F.HL, postY, F.POST_R, 0.2);
+  }
+  return p.x !== x || p.y !== y;
+}
+
 function circleStatic(o: { x: number; y: number; vx: number; vy: number }, r: number, px: number, py: number, pr: number, e: number) {
   let dx = o.x - px;
   let dy = o.y - py;
   const d = Math.hypot(dx, dy);
   const minD = r + pr;
-  if (d >= minD || d === 0) return;
-  dx /= d;
-  dy /= d;
-  o.x = px + dx * minD;
-  o.y = py + dy * minD;
+  if (d >= minD) return false;
+  dx = d ? dx / d : 1;
+  dy = d ? dy / d : 0;
+  o.x = px + dx * (minD + 0.001);
+  o.y = py + dy * (minD + 0.001);
   const vn = o.vx * dx + o.vy * dy;
   if (vn < 0) {
     o.vx -= (1 + e) * vn * dx;
     o.vy -= (1 + e) * vn * dy;
   }
+  return true;
 }
 
 /** 本地预测用：只模拟自身移动，不含碰撞 */

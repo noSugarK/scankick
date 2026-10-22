@@ -1,4 +1,5 @@
 import type { Snapshot, SnapPlayer } from '../game/types';
+import { F, ballRadius, constrainPlayerBounds } from '../game/sim';
 
 const TICK_MS = 1000 / 60;
 
@@ -69,7 +70,6 @@ export class SnapBuffer {
 }
 
 function extrapolate(s: Snapshot, sec: number): Snapshot {
-  if (sec <= 0) return s;
   return {
     ...s,
     ball: { ...s.ball, x: s.ball.x + s.ball.vx * sec, y: s.ball.y + s.ball.vy * sec },
@@ -97,7 +97,7 @@ function lerpSnap(a: Snapshot, b: Snapshot, k: number): Snapshot {
   return {
     ...b,
     ball: ballJump
-      ? b.ball
+      ? { ...b.ball }
       : {
           x: lerp(a.ball.x, b.ball.x, k),
           y: lerp(a.ball.y, b.ball.y, k),
@@ -106,7 +106,7 @@ function lerpSnap(a: Snapshot, b: Snapshot, k: number): Snapshot {
         },
     players: b.players.map((pb) => {
       const pa = prev.get(pb.id);
-      if (!pa || jump(pa.x, pa.y, pb.x, pb.y)) return pb;
+      if (!pa || jump(pa.x, pa.y, pb.x, pb.y)) return { ...pb };
       return {
         ...pb,
         x: lerp(pa.x, pb.x, k),
@@ -118,4 +118,80 @@ function lerpSnap(a: Snapshot, b: Snapshot, k: number): Snapshot {
       };
     }),
   };
+}
+
+/** 插值、外推和本地预测后，球员展示圆仍须避开球网及门柱。 */
+export function separateViewPlayers<T extends Snapshot>(s: T): T {
+  let changed = false;
+  const players = s.players.map((p) => {
+    const next = { ...p };
+    constrainPlayerBounds(next);
+    if (next.x !== p.x || next.y !== p.y) changed = true;
+    return next;
+  });
+  return changed ? { ...s, players } : s;
+}
+
+/** 在场地和球网内校正展示球的位置，避开球员及门柱，不修改权威快照。 */
+export function separateViewBall<T extends Snapshot>(s: T): T {
+  const r = ballRadius(s.party);
+  const rects = [
+    { left: -F.HL + r, right: F.HL - r, top: -F.HW + r, bottom: F.HW - r },
+    { left: -F.HL - F.GD + r, right: F.HL + F.GD - r, top: -F.GW + r, bottom: F.GW - r },
+  ];
+  const circles = s.players.map((p) => ({ x: p.x, y: p.y, angle: p.angle, r: F.PR + r }));
+  for (const x of [-F.HL, F.HL]) for (const y of [-F.GW, F.GW]) circles.push({ x, y, angle: 0, r: F.POST_R + r });
+  const clear = (x: number, y: number) =>
+    rects.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) &&
+    circles.every((c) => (x - c.x) ** 2 + (y - c.y) ** 2 >= c.r * c.r);
+  if (clear(s.ball.x, s.ball.y)) return s;
+  let bestX = s.ball.x;
+  let bestY = s.ball.y;
+  let bestD2 = Infinity;
+  const consider = (x: number, y: number) => {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const d2 = (x - s.ball.x) ** 2 + (y - s.ball.y) ** 2;
+    if (d2 >= bestD2 || !clear(x, y)) return;
+    bestX = x; bestY = y; bestD2 = d2;
+  };
+  // ponytail: 最多8名球员，每人最多覆盖一个间距120的点；扩大人数时再扩大此兜底网格。
+  for (const x of [-120, 0, 120]) for (const y of [-120, 0, 120]) consider(x, y);
+  for (const b of rects) {
+    consider(Math.max(b.left, Math.min(b.right, s.ball.x)), Math.max(b.top, Math.min(b.bottom, s.ball.y)));
+    for (const x of [b.left, b.right]) for (const y of [b.top, b.bottom]) consider(x, y);
+  }
+  for (let i = 0; i < circles.length; i++) {
+    const a = circles[i];
+    // 极小间隙吸收圆交点计算的浮点误差。
+    const radius = a.r + 0.0001;
+    const dx = s.ball.x - a.x;
+    const dy = s.ball.y - a.y;
+    const d = Math.hypot(dx, dy);
+    consider(a.x + radius * (d ? dx / d : Math.cos(a.angle)), a.y + radius * (d ? dy / d : Math.sin(a.angle)));
+    for (const b of rects) {
+      for (const x of [b.left, b.right]) {
+        const h2 = radius * radius - (x - a.x) ** 2;
+        if (h2 >= 0) { const h = Math.sqrt(h2); consider(x, a.y - h); consider(x, a.y + h); }
+      }
+      for (const y of [b.top, b.bottom]) {
+        const h2 = radius * radius - (y - a.y) ** 2;
+        if (h2 >= 0) { const h = Math.sqrt(h2); consider(a.x - h, y); consider(a.x + h, y); }
+      }
+    }
+    for (let j = i + 1; j < circles.length; j++) {
+      const b = circles[j];
+      const br = b.r + 0.0001;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.hypot(dx, dy);
+      if (!d || d > radius + br || d < Math.abs(radius - br)) continue;
+      const along = (radius * radius - br * br + d * d) / (2 * d);
+      const h = Math.sqrt(Math.max(0, radius * radius - along * along));
+      const mx = a.x + along * dx / d;
+      const my = a.y + along * dy / d;
+      consider(mx - h * dy / d, my + h * dx / d);
+      consider(mx + h * dy / d, my - h * dx / d);
+    }
+  }
+  return { ...s, ball: { ...s.ball, x: bestX, y: bestY } };
 }

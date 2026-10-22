@@ -18,6 +18,7 @@ export function joinHashFromQr(text: string): string | null {
 }
 
 export async function openScanner(root: HTMLElement): Promise<void> {
+  if (root.querySelector('.scan-overlay')) return;
   const el = document.createElement('div');
   el.className = 'scan-overlay';
   el.innerHTML = `
@@ -31,16 +32,22 @@ export async function openScanner(root: HTMLElement): Promise<void> {
   root.appendChild(el);
   const video = el.querySelector('video')!;
   const msg = el.querySelector<HTMLElement>('.scan-msg')!;
-  const jsqr = import('jsqr').then((m) => m.default);
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   let stream: MediaStream | null = null;
   let raf = 0;
   let lastBad = '';
+  let closed = false;
 
-  const close = () => {
+  const stopCamera = () => {
     cancelAnimationFrame(raf);
     stream?.getTracks().forEach((tr) => tr.stop());
+    stream = null;
+    video.srcObject = null;
+  };
+  const close = () => {
+    closed = true;
+    stopCamera();
     el.remove();
   };
   el.querySelector<HTMLElement>('.scan-close')!.onclick = close;
@@ -53,7 +60,9 @@ export async function openScanner(root: HTMLElement): Promise<void> {
     canvas.height = Math.round(h * k);
     ctx.drawImage(src, 0, 0, canvas.width, canvas.height);
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const code = (await jsqr)(img.data, img.width, img.height, { inversionAttempts: fromPhoto ? 'attemptBoth' : 'dontInvert' });
+    const jsqr = (await import('jsqr')).default;
+    if (closed || !el.isConnected) return true;
+    const code = jsqr(img.data, img.width, img.height, { inversionAttempts: fromPhoto ? 'attemptBoth' : 'dontInvert' });
     if (!code?.data) return false;
     const hash = joinHashFromQr(code.data);
     if (hash) {
@@ -74,13 +83,16 @@ export async function openScanner(root: HTMLElement): Promise<void> {
     const f = file.files?.[0];
     file.value = '';
     if (!f) return;
+    let bmp: ImageBitmap | undefined;
     try {
-      const bmp = await createImageBitmap(f);
+      bmp = await createImageBitmap(f);
+      if (closed) return;
       lastBad = '';
       if (!(await decode(bmp, bmp.width, bmp.height, true))) msg.textContent = t('scan.noCode');
-      bmp.close();
     } catch {
       msg.textContent = t('scan.noCode');
+    } finally {
+      bmp?.close();
     }
   };
 
@@ -94,13 +106,21 @@ export async function openScanner(root: HTMLElement): Promise<void> {
     if (!el.isConnected) return close(); // 打开期间已关闭
     video.srcObject = stream;
     await video.play();
+    if (closed) return;
     msg.textContent = t('scan.hint');
     const tick = async () => {
-      if (video.videoWidth) await decode(video, video.videoWidth, video.videoHeight);
-      if (el.isConnected) raf = requestAnimationFrame(tick);
+      if (closed || !el.isConnected) return close();
+      try {
+        if (video.videoWidth) await decode(video, video.videoWidth, video.videoHeight);
+        if (!closed) raf = requestAnimationFrame(tick);
+      } catch {
+        stopCamera();
+        msg.textContent = t('scan.unsupported');
+      }
     };
     tick();
   } catch (e) {
+    stopCamera();
     const name = (e as Error)?.name;
     msg.textContent = t(name === 'NotAllowedError' || name === 'SecurityError' ? 'scan.denied' : 'scan.unsupported');
   }
