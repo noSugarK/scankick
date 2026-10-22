@@ -66,6 +66,38 @@ test('放开触屏摇杆会恢复仍按住的键盘方向，表单控件上的�
   } finally { Object.assign(globalThis, original); }
 });
 
+test('触屏和键盘移动起停立即通知发送，连续拖动仍交给定时采样', () => {
+  const original = { window: globalThis.window, document: globalThis.document };
+  globalThis.window = new EventTarget();
+  globalThis.document = new EventTarget();
+  try {
+    const els = new Map(['.joy-zone', '.joy-base', '.joy-knob'].map((key) => [key, new Element()]));
+    const buttons = [1, 2, 4, 8].map((bit) => Object.assign(new Element(), { dataset: { bit: String(bit) } }));
+    const pad = new Gamepad({ insertAdjacentHTML() {}, querySelector: (key) => els.get(key), querySelectorAll: () => buttons });
+    const sent = [];
+    pad.onButtons = () => sent.push({ ...pad.input });
+    const zone = els.get('.joy-zone');
+    fire(zone, 'pointerdown', { pointerId: 1, clientX: 150, clientY: 150 });
+    assert.equal(sent.length, 0, '静止触摸不增加发送');
+    fire(zone, 'pointermove', { pointerId: 1, clientX: 210, clientY: 150 });
+    assert.equal(sent.length, 1, '开始移动不等待33ms采样');
+    assert.equal(sent[0].jx, 1);
+    fire(zone, 'pointermove', { pointerId: 1, clientX: 200, clientY: 150 });
+    assert.equal(sent.length, 1, '持续拖动不按触摸刷新率洪泛网络');
+    fire(zone, 'pointermove', { pointerId: 1, clientX: 150, clientY: 150 });
+    assert.deepEqual(sent.at(-1), { jx: 0, jy: 0, btn: 0 }, '回到死区立即停止');
+    fire(zone, 'pointermove', { pointerId: 1, clientX: 210, clientY: 150 });
+    fire(zone, 'pointerup', { pointerId: 1 });
+    assert.equal(sent.length, 4);
+    assert.deepEqual(sent.at(-1), { jx: 0, jy: 0, btn: 0 }, '松手立即发送停止');
+    fire(window, 'keydown', { code: 'KeyD' });
+    fire(window, 'keyup', { code: 'KeyD' });
+    assert.equal(sent.length, 6);
+    assert.equal(sent.at(-2).jx, 1);
+    assert.equal(sent.at(-1).jx, 0);
+  } finally { Object.assign(globalThis, original); }
+});
+
 test('离场者保留最新昵称和独立战绩，新人复用球员 ID 不继承旧统计或触球归属', () => {
   const host = new HostGame('STATS', { listed: false }, (_room, cb) => ({
     cb, broadcastJson() {}, sendJson() {}, linkOf: () => 'relay', drop() {}, close() {},

@@ -34,7 +34,7 @@ export class Gamepad {
   readonly input: Input = { jx: 0, jy: 0, btn: 0 };
   /** 按键按下时回调（用于震动反馈） */
   onPress: (bit: number) => void = () => {};
-  /** 按键变化立即发送，避免短按落在两次定时采样之间。 */
+  /** 按键和移动起停立即发送，避免短按或松手等待下一次定时采样。 */
   onButtons: () => void = () => {};
   private joyId: number | null = null;
   private origin = { x: 0, y: 0 };
@@ -45,6 +45,7 @@ export class Gamepad {
   private bDown = 0;
   private touchBtn = 0;
   private keyBtn = 0;
+  private moving = false;
   private keys = new Set<string>();
   private pointers = new Map<HTMLElement, Set<number>>();
   private R = 56;
@@ -78,6 +79,7 @@ export class Gamepad {
     this.keys.clear();
     this.keyBtn = this.touchBtn = 0;
     this.bDown = 0;
+    this.moving = false;
     this.input.jx = this.input.jy = this.input.btn = 0;
     this.restBase();
     if (joyId !== null && this.zone.hasPointerCapture(joyId)) this.zone.releasePointerCapture(joyId);
@@ -143,11 +145,13 @@ export class Gamepad {
     const dead = 0.12;
     if (m < dead) {
       this.input.jx = this.input.jy = 0;
+      this.sync();
       return;
     }
     const mag = (m - dead) / (1 - dead);
     this.input.jx = (dx / len) * mag;
     this.input.jy = (dy / len) * mag;
+    this.sync();
   }
 
   private bindButton(el: HTMLElement) {
@@ -223,8 +227,10 @@ export class Gamepad {
 
   private sync() {
     const btn = this.touchBtn | this.keyBtn;
-    if (btn === this.input.btn) return;
+    const moving = !!(this.input.jx || this.input.jy);
+    if (btn === this.input.btn && moving === this.moving) return;
     this.input.btn = btn;
+    this.moving = moving;
     this.onButtons();
   }
 

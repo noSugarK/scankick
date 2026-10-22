@@ -238,7 +238,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     net = connection;
     setWatching(watch);
     connection.forceRelay = forceRelay;
-    buf.delay = 60;
+    buf.delay = mode.kind === 'client' && mode.lan ? 35 : 60;
     const showJoin = () => {
       connection.close();
       pad.reset();
@@ -252,7 +252,7 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     connection.onState = (s) => {
       if (net !== connection) return;
       setStatus(s);
-      buf.delay = s === 'relay' ? 140 : 60;
+      buf.delay = s === 'relay' ? 140 : s === 'lan' ? 35 : 60;
       if (s === 'lost' || s === 'rejected') {
         pad.reset();
         buf.reset();

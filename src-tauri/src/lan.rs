@@ -6,6 +6,7 @@ use axum::{
     http::{header, HeaderMap, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::get,
+    serve::ListenerExt,
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -57,9 +58,14 @@ struct Hub {
     room: String,
     key: String,
     host: Mutex<Option<mpsc::Sender<Message>>>,
-    peers: Mutex<HashMap<u32, mpsc::Sender<Message>>>,
+    peers: Mutex<HashMap<u32, Peer>>,
     next: AtomicU32,
     stop: watch::Sender<bool>,
+}
+
+struct Peer {
+    control: mpsc::Sender<Message>,
+    snapshot: watch::Sender<Option<Message>>,
 }
 
 async fn wait_for_stop(stop: &mut watch::Receiver<bool>) {
@@ -139,7 +145,12 @@ async fn start_server(room: String, state: &LanServer) -> Result<ServerInfo, Str
     let mut shutdown = stop.subscribe();
     tauri::async_runtime::spawn(async move {
         let _ = axum::serve(
-            listener,
+            listener.tap_io(|stream| {
+                // Inputs and snapshots are tiny packets; do not wait for another packet/ACK.
+                if let Err(error) = stream.set_nodelay(true) {
+                    eprintln!("Could not enable TCP_NODELAY for LAN connection: {error}");
+                }
+            }),
             app.into_make_service_with_connect_info::<SocketAddr>(),
         )
         .with_graceful_shutdown(async move {
@@ -222,11 +233,12 @@ async fn player_upgrade(
     }
     let cid = hub.next.fetch_add(1, Ordering::Relaxed);
     let (tx, rx) = mpsc::channel(8);
-    peers.insert(cid, tx);
+    let (snapshot, snapshots) = watch::channel(None);
+    peers.insert(cid, Peer { control: tx, snapshot });
     drop(peers);
     ws.max_message_size(16384)
         .max_frame_size(16384)
-        .on_upgrade(move |socket| player_socket(socket, hub, cid, rx))
+        .on_upgrade(move |socket| player_socket(socket, hub, cid, rx, snapshots))
 }
 
 async fn host_event(hub: &Hub, message: Message) -> bool {
@@ -239,16 +251,15 @@ async fn player_socket(
     hub: Arc<Hub>,
     cid: u32,
     mut rx: mpsc::Receiver<Message>,
+    mut snapshots: watch::Receiver<Option<Message>>,
 ) {
     let mut stop = hub.stop.subscribe();
     let mut last = tokio::time::Instant::now();
     let mut heartbeat = tokio::time::interval(Duration::from_secs(2));
     loop {
         tokio::select! {
+            biased;
             _ = wait_for_stop(&mut stop) => break,
-            _ = heartbeat.tick() => {
-                if last.elapsed() > Duration::from_secs(10) { break; }
-            },
             message = rx.recv() => match message {
                 Some(message) => if !matches!(timeout(Duration::from_secs(2), socket.send(message)).await, Ok(Ok(()))) { break; },
                 None => break,
@@ -269,6 +280,16 @@ async fn player_socket(
                     _ => break,
                 };
                 if !host_event(&hub, message).await { break; }
+            },
+            _ = heartbeat.tick() => {
+                if last.elapsed() > Duration::from_secs(10) { break; }
+            },
+            changed = snapshots.changed() => {
+                if changed.is_err() { break; }
+                let message = snapshots.borrow_and_update().clone();
+                if let Some(message) = message {
+                    if !matches!(timeout(Duration::from_secs(2), socket.send(message)).await, Ok(Ok(()))) { break; }
+                }
             }
         }
     }
@@ -323,15 +344,16 @@ async fn host_socket(mut socket: WebSocket, hub: Arc<Hub>, mut rx: mpsc::Receive
 
 async fn deliver(hub: &Hub, cid: Option<u32>, message: Message, snapshot: bool) {
     let mut peers = hub.peers.lock().await;
-    peers.retain(|id, tx| {
+    peers.retain(|id, peer| {
         if cid.is_some_and(|cid| cid != *id) {
             return true;
         }
-        match tx.try_send(message.clone()) {
-            Ok(()) => true,
-            // Snapshots are replaceable. Never queue an unbounded history for a slow phone.
-            Err(mpsc::error::TrySendError::Full(_)) => snapshot,
-            Err(_) => false,
+        if snapshot {
+            // Keep only the newest unsent state; a slow phone must not replay old frames.
+            peer.snapshot.send(Some(message.clone())).is_ok()
+        } else {
+            // Room events and ping replies are reliable and take priority over snapshots.
+            peer.control.try_send(message.clone()).is_ok()
         }
     });
 }
@@ -385,7 +407,7 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio_tungstenite::{
-        connect_async,
+        connect_async, connect_async_with_config,
         tungstenite::{client::IntoClientRequest, Message as Wire},
     };
 
@@ -591,5 +613,65 @@ mod tests {
         })
         .await
         .expect("HTTP listener must stop when host exits");
+    }
+
+    #[tokio::test]
+    async fn local_round_trip_with_snapshots() {
+        let state = LanServer::default();
+        let info = start_server("ABCDE".into(), &state).await.unwrap();
+        let host_url = format!("ws://127.0.0.1:{}/host?key={}", info.port, info.key);
+        let player_url = format!("ws://127.0.0.1:{}/ws?room=ABCDE", info.port);
+        let (mut host, _) = connect_async_with_config(host_url, None, true).await.unwrap();
+        let (mut player, _) = connect_async_with_config(player_url, None, true).await.unwrap();
+        let mut samples = Vec::new();
+        for seq in 0..12_u8 {
+            let start = tokio::time::Instant::now();
+            player.send(Wire::Text(json!({"t":"ping","ts":seq}).to_string().into())).await.unwrap();
+            let envelope: Value = serde_json::from_str(timeout(Duration::from_secs(3), host.next())
+                .await.unwrap().unwrap().unwrap().to_text().unwrap()).unwrap();
+            let cid = envelope["cid"].as_u64().unwrap() as u32;
+            let mut packet = cid.to_le_bytes().to_vec();
+            packet.extend_from_slice(&[2, seq]);
+            host.send(Wire::Binary(packet.into())).await.unwrap();
+            tokio::task::yield_now().await;
+            host.send(Wire::Text(json!({"cid":cid,"data":{"t":"pong","ts":seq}}).to_string().into())).await.unwrap();
+            loop {
+                let message = timeout(Duration::from_secs(3), player.next()).await.unwrap().unwrap().unwrap();
+                if let Wire::Text(text) = message {
+                    let pong: Value = serde_json::from_str(&text).unwrap();
+                    assert_eq!(pong["ts"], seq);
+                    samples.push(start.elapsed().as_secs_f64() * 1000.0);
+                    break;
+                }
+            }
+        }
+        samples.sort_by(f64::total_cmp);
+        println!("Local WebSocket round trip with snapshots: median={:.2}ms, max={:.2}ms", samples[6], samples[11]);
+        host.close(None).await.unwrap();
+        state.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn slow_player_keeps_latest_snapshot_without_delaying_control_messages() {
+        let (control, mut events) = mpsc::channel(2);
+        let (snapshot, mut latest) = watch::channel(None);
+        let (stop, _) = watch::channel(false);
+        let hub = Hub {
+            room: "ABCDE".into(), key: "test".into(), host: Mutex::new(None),
+            peers: Mutex::new(HashMap::from([(1, Peer { control, snapshot })])),
+            next: AtomicU32::new(2), stop,
+        };
+        for tick in 0..120_u8 {
+            deliver(&hub, Some(1), Message::Binary(vec![tick].into()), true).await;
+        }
+        assert_eq!(latest.borrow_and_update().as_ref().unwrap(), &Message::Binary(vec![119].into()));
+        assert!(events.try_recv().is_err(), "Snapshot congestion cannot fill the control queue");
+        let pong = Message::Text(r#"{"t":"pong"}"#.into());
+        deliver(&hub, Some(1), pong.clone(), false).await;
+        assert_eq!(events.recv().await.unwrap(), pong);
+        deliver(&hub, Some(1), Message::Binary(vec![120].into()), true).await;
+        latest.changed().await.unwrap();
+        assert_eq!(latest.borrow_and_update().as_ref().unwrap(), &Message::Binary(vec![120].into()));
+        assert_eq!(hub.peers.lock().await.len(), 1, "A stalled snapshot receiver stays connected");
     }
 }
