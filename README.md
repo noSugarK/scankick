@@ -219,14 +219,14 @@ git push origin v0.1.0
 
 MSI 内部版本只接受数字：`bundle.windows.wix.version` 应设为去掉预发布后缀的版本（例如 `0.1.0`），CI 会检查一致性；下载文件名仍保留完整的 `0.1.0-beta.2` 等版本。
 
-Android 始终使用 Release 优化编译并移除 Rust 调试符号；未配置正式签名时使用测试密钥签名，应用 ID 保留 `.debug` 后缀。测试签名随 CI 运行变化，不保证覆盖升级。正式签名请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets（必须全设或全不设）：
+Android 始终使用 Release 优化编译并移除 Rust 调试符号。推送版本标签或手动构建标签时，必须配置固定签名密钥；缺少或只配置部分签名 Secrets 会在构建开始时失败，避免发布无法稳定覆盖升级的测试包。仅在分支上手动构建时允许不配置签名，此时使用临时测试密钥，应用 ID 保留 `.debug` 后缀，不保证覆盖升级，也不应作为发布安装包。请在仓库 Settings → Secrets and variables → Actions 配置下面四个 Secrets：
 
 - `ANDROID_KEYSTORE_BASE64`：签名 keystore 文件的 Base64，使用不换行的编码。
 - `ANDROID_KEYSTORE_PASSWORD`：keystore 密码。
 - `ANDROID_KEY_ALIAS`：签名密钥别名。
 - `ANDROID_KEY_PASSWORD`：签名密钥密码。
 
-配置齐全后自动构建正式签名 APK；签名文件只写入临时目录，构建后清理。Windows/macOS 目前未配置发行者签名或 Apple 公证，首次安装可能显示系统校验提示。
+配置齐全后自动构建正式签名 APK；后续版本务必沿用并备份同一份密钥，签名文件只写入临时目录，构建后清理。此前安装过 `test-signed` APK 的用户需要卸载测试版后再安装固定签名版本，卸载会清除应用本地数据；完成这次迁移后，同包名、同签名且版本号递增的版本才可以覆盖升级。Windows/macOS 目前未配置发行者签名或 Apple 公证，首次安装可能显示系统校验提示。
 
 #### 部署到 GitHub Pages
 

@@ -126,6 +126,9 @@ jobs:
       APP_VERSION: ${{ needs.check.outputs.version }}
     steps:
       - uses: actions/checkout@v5
+      - name: Configure Android signing
+        id: signing
+        run: python .github/scripts/configure-android-signing.py
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -156,28 +159,6 @@ jobs:
           fi
           chmod +x src-tauri/gen/android/gradlew
           python .github/scripts/prepare-android.py
-      - name: Configure Android signing
-        id: signing
-        run: |
-          python <<'PY'
-          import base64, os
-          from pathlib import Path
-          names = ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD']
-          present = [bool(os.environ.get(name)) for name in names]
-          if any(present) and not all(present):
-              raise SystemExit('Configure all four ANDROID_KEYSTORE_* / ANDROID_KEY_* secrets, or leave all unset')
-          signed = all(present)
-          if signed:
-              path = Path(os.environ['RUNNER_TEMP']) / 'scankick-upload.jks'
-              path.write_bytes(base64.b64decode(os.environ['ANDROID_KEYSTORE_BASE64'], validate=True))
-              path.chmod(0o600)
-              with open(os.environ['GITHUB_ENV'], 'a') as output:
-                  output.write(f'ANDROID_KEYSTORE_PATH={path}\n')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
-              output.write(f'signed={str(signed).lower()}\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
-              output.write('Android: release build with production signing.\n' if signed else 'Android: release build with test signing; configure signing secrets for stable release upgrades.\n')
-          PY
       - name: Build APK only
         run: npm run tauri -- android build --ci --apk --target aarch64
       - name: Collect installable APK only
