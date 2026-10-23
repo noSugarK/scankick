@@ -53,15 +53,16 @@ class AndroidConfigTest(unittest.TestCase):
                     self.assertIn("android.permission.VIBRATE", permissions)
                     self.assertEqual(permissions.count("android.permission.CAMERA"), 1)
                     self.assertEqual(root.find("uses-feature").get(f"{{{namespace}}}required"), "false")
-                    self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "ScanKick")
+                    self.assertEqual(root.find("application").get(f"{{{namespace}}}label"), "@string/app_name")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}icon"), "@mipmap/ic_launcher")
                     self.assertEqual(root.find("application").get(f"{{{namespace}}}roundIcon"), "@mipmap/ic_launcher")
                     self.assertEqual(root.find("application/activity").get(f"{{{namespace}}}screenOrientation"), "fullSensor")
+                    for folder, title in {"values": "ScanKick", "values-zh": "开踢", "values-zh-rTW": "開踢", "values-zh-rHK": "開踢"}.items():
+                        resources = ET.parse(app / "src/main/res" / folder / "strings.xml").getroot()
+                        self.assertEqual(resources.find("string[@name='app_name']").text, title)
                     network = ET.parse(app / "src/main/res/xml/scankick_network_security.xml").getroot()
-                    self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "false")
-                    domains = {d.text for d in network.findall("domain-config/domain")}
-                    self.assertEqual(domains, {"127.0.0.1", "localhost", "tauri.localhost"})
-                    self.assertTrue(all(d.get("includeSubdomains") == "false" for d in network.findall("domain-config/domain")))
+                    self.assertEqual(network.find("base-config").get("cleartextTrafficPermitted"), "true",
+                                     "LAN players must connect to dynamic host IPs, not only loopback")
                     self.assertIn('System.getenv("ANDROID_KEYSTORE_PASSWORD")', gradle.read_text(encoding="utf-8"))
                     self.assertIn('signingConfig = signingConfigs.getByName("debug")', gradle.read_text(encoding="utf-8"))
                     self.assertIn('applicationIdSuffix = ".debug"', gradle.read_text(encoding="utf-8"))

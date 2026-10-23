@@ -20,12 +20,92 @@ use std::{
     },
 };
 use tokio::{
-    net::TcpListener,
+    net::{TcpListener, UdpSocket},
     sync::{mpsc, watch, Mutex},
     time::{timeout, Duration},
 };
 
 include!(concat!(env!("OUT_DIR"), "/lan-assets.rs"));
+
+const DISCOVERY_PORT: u16 = 42819;
+const DISCOVERY_QUERY: &[u8] = b"SCANKICK_DISCOVER_V1";
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanRoom {
+    room: String,
+    base_url: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Advertisement {
+    service: String,
+    room: String,
+    port: u16,
+}
+
+async fn advertise(hub: Arc<Hub>, port: u16) {
+    // Discovery is optional: direct address joins still work if UDP is unavailable.
+    let socket = match UdpSocket::bind(("0.0.0.0", DISCOVERY_PORT)).await {
+        Ok(socket) => socket,
+        Err(error) => { eprintln!("LAN discovery unavailable: {error}"); return; }
+    };
+    respond_to_discovery(socket, hub, port).await;
+}
+
+async fn respond_to_discovery(socket: UdpSocket, hub: Arc<Hub>, port: u16) {
+    let response = serde_json::to_vec(&Advertisement {
+        service: "scankick-v1".into(), room: hub.room.clone(), port,
+    }).unwrap();
+    let mut stop = hub.stop.subscribe();
+    let mut buffer = [0; 256];
+    loop {
+        tokio::select! {
+            _ = wait_for_stop(&mut stop) => break,
+            incoming = socket.recv_from(&mut buffer) => {
+                let Ok((n, addr)) = incoming else { break; };
+                if &buffer[..n] == DISCOVERY_QUERY && hub.host.lock().await.is_some() {
+                    let _ = socket.send_to(&response, addr).await;
+                }
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn discover_lan() -> Result<Vec<LanRoom>, String> {
+    let socket = UdpSocket::bind("0.0.0.0:0").await.map_err(|e| e.to_string())?;
+    socket.set_broadcast(true).map_err(|e| e.to_string())?;
+    let mut targets = vec![std::net::Ipv4Addr::BROADCAST, std::net::Ipv4Addr::LOCALHOST];
+    for iface in if_addrs::get_if_addrs().map_err(|e| e.to_string())? {
+        if let if_addrs::IfAddr::V4(addr) = iface.addr {
+            if let Some(broadcast) = addr.broadcast { targets.push(broadcast); }
+        }
+    }
+    targets.sort();
+    targets.dedup();
+    let targets = targets.into_iter().map(|ip| SocketAddr::from((ip, DISCOVERY_PORT))).collect();
+    query_discovery(socket, targets).await
+}
+
+async fn query_discovery(socket: UdpSocket, targets: Vec<SocketAddr>) -> Result<Vec<LanRoom>, String> {
+    for target in targets {
+        let _ = socket.send_to(DISCOVERY_QUERY, target).await;
+    }
+    let mut rooms = HashMap::new();
+    let mut buffer = [0; 512];
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(1200);
+    while let Ok(Ok((n, addr))) = tokio::time::timeout_at(deadline, socket.recv_from(&mut buffer)).await {
+        let Ok(info) = serde_json::from_slice::<Advertisement>(&buffer[..n]) else { continue; };
+        if info.service != "scankick-v1" || info.port == 0 || !(4..=8).contains(&info.room.len())
+            || !info.room.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit()) { continue; }
+        let base_url = format!("http://{}:{}", addr.ip(), info.port);
+        rooms.insert(base_url.clone(), LanRoom { room: info.room, base_url });
+    }
+    let mut rooms: Vec<_> = rooms.into_values().collect();
+    rooms.sort_by(|a, b| a.base_url.cmp(&b.base_url));
+    Ok(rooms)
+}
 
 #[derive(Clone, Default)]
 pub struct LanServer(Arc<Mutex<Option<Running>>>);
@@ -143,6 +223,7 @@ async fn start_server(room: String, state: &LanServer) -> Result<ServerInfo, Str
         stop: stop.clone(),
     });
     let mut shutdown = stop.subscribe();
+    tauri::async_runtime::spawn(advertise(hub.clone(), port));
     tauri::async_runtime::spawn(async move {
         let _ = axum::serve(
             listener.tap_io(|stream| {
@@ -223,7 +304,10 @@ async fn player_upgrade(
                 .and_then(|h| h.to_str().ok())
                 .unwrap_or("")
         );
-        if origin.as_bytes() != expected.as_bytes() {
+        let native = matches!(origin.to_str().unwrap_or(""),
+            "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost")
+            || (cfg!(debug_assertions) && origin == "http://127.0.0.1:1420");
+        if origin.as_bytes() != expected.as_bytes() && !native {
             return StatusCode::FORBIDDEN.into_response();
         }
     }
@@ -599,6 +683,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(leave["event"], "leave");
+        // Packaged app clients have a different origin from the LAN HTTP server.
+        for origin in ["tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"] {
+            let mut request = format!("ws://127.0.0.1:{}/ws?room=ABCDE", info.port)
+                .into_client_request().unwrap();
+            request.headers_mut().insert("origin", origin.parse().unwrap());
+            let (mut native, _) = connect_async(request).await.expect("App must be able to join another host");
+            native.close(None).await.unwrap();
+        }
         host.close(None).await.unwrap();
         timeout(Duration::from_secs(3), async {
             loop {
@@ -613,6 +705,28 @@ mod tests {
         })
         .await
         .expect("HTTP listener must stop when host exits");
+    }
+
+    #[tokio::test]
+    async fn discovery_returns_join_address_without_starting_a_local_server() {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let target = socket.local_addr().unwrap();
+        let (stop, _) = watch::channel(false);
+        let (tx, _rx) = mpsc::channel(1);
+        let hub = Arc::new(Hub {
+            room: "ABCDE".into(), key: "secret".into(), host: Mutex::new(Some(tx)),
+            peers: Mutex::new(HashMap::new()), next: AtomicU32::new(1), stop: stop.clone(),
+        });
+        let responder = tokio::spawn(respond_to_discovery(socket, hub, 12345));
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let rooms = query_discovery(client, vec![target, target]).await.unwrap();
+        assert_eq!(rooms.len(), 1, "Duplicate responses must collapse to one room");
+        assert_eq!(rooms[0].room, "ABCDE");
+        assert_eq!(rooms[0].base_url, "http://127.0.0.1:12345");
+        stop.send(true).unwrap();
+        responder.await.unwrap();
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        assert!(query_discovery(client, vec![target]).await.unwrap().is_empty(), "Closed hosts must disappear");
     }
 
     #[tokio::test]

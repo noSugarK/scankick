@@ -98,7 +98,7 @@ Installers are on [GitHub Releases](https://github.com/noSugarK/scankick/release
 | iOS / iPadOS | Not available | Scan with the system camera and play in the browser; for fullscreen, use Share → Add to Home Screen and open it from the icon |
 
 - **Online mode**: shares the public lobby and rooms with the website. The QR code points to the website, so players join in their browser.
-- **Local network mode**: the app runs an HTTP/WebSocket server on the device, no internet needed. Players join from a browser on the same Wi-Fi or hotspot.
+- **Local network mode**: the host app runs an HTTP/WebSocket server, no internet needed. Players on the same Wi-Fi or hotspot can discover and join rooms from the app lobby without hosting, or scan the QR code to join in a browser. If discovery is blocked, enter the host address and room code or paste a full invite link. Discovery uses UDP port 42819; gameplay uses the host’s dynamic WebSocket port.
 - **Android**: the status bar stays visible in portrait and landscape goes fullscreen; scanning asks for camera permission; external links open in the system browser.
 
 Versions containing `-` (such as `v0.1.0-beta.2`) are prereleases. Installers are not publisher-signed yet: Windows may show a SmartScreen prompt (choose More info → Run anyway), and on macOS allow the app under System Settings → Privacy & Security the first time. Test-signed APKs use a `.debug` application ID and may not upgrade in place.

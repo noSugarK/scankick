@@ -4,6 +4,7 @@ import { openScanner } from '../ui/scan';
 import { bindSiteTools, icon, siteFooter, siteTools } from '../ui/site';
 import { HISTORY_KEY, brand, esc, isPin, normalizeCode, store } from '../ui/util';
 import { isLanPage, isNativeApp, stopLan } from '../net/lan-session';
+import { bindLanLobby, lanLobbyHtml } from '../ui/lan-lobby';
 
 const CODE_LEN = 5;
 type Tab = 'host' | 'join' | 'lobby';
@@ -15,13 +16,13 @@ export function mountHome(app: HTMLElement) {
   // 回到首页即离开了房间（主机随页面关闭），房间战绩一并删除
   store.clear(HISTORY_KEY, false);
   const saved = store.get('sfb.tab', false) as Tab | null;
-  const tabs: Tab[] = isLanPage() ? ['join'] : lan ? ['host', 'join'] : ['host', 'join', 'lobby'];
-  let tab: Tab = tabs.includes(saved as Tab) ? saved as Tab : tabs[0];
+  const tabs: Tab[] = isLanPage() ? ['join'] : lan ? ['host', 'lobby'] : ['host', 'join', 'lobby'];
+  let tab: Tab = lan && native && saved === 'join' ? 'lobby' : tabs.includes(saved as Tab) ? saved as Tab : tabs[0];
 
   app.innerHTML = `
   <div class="site home${native || isLanPage() ? ' app-home' : ''}">
     <header class="site-hero">
-      <div class="site-bar"><span class="brand"><img class="logo-light" src="${brand('logo-white-sm.png')}" alt="ScanKick"><img class="logo-dark" src="${brand('logo-dark-sm.png')}" alt="ScanKick"></span>${siteTools()}</div>
+      <div class="site-bar"><span class="brand"><img class="logo-light" src="${brand('logo-white-sm.png')}" alt="${t('app.name')}"><img class="logo-dark" src="${brand('logo-dark-sm.png')}" alt="${t('app.name')}"></span>${siteTools()}</div>
       <div class="hero-body">
         <div class="hero-text">
           <h1>${t('app.name')}</h1>
@@ -55,7 +56,7 @@ export function mountHome(app: HTMLElement) {
         <section data-pane="join">
           <h2 class="pane-title">${t('tab.join')}</h2>
           <div ${lan ? 'hidden' : ''}><button class="scan-btn">${icon.scan}<b>${t('join.scan')}</b><small>${t('join.scanDesc')}</small></button></div>
-          ${lan ? `<p class="hint">${t('lan.joinHint')}</p>` : ''}
+          ${lan ? `<p class="hint">${t('lan.hint')}</p>` : ''}
           <div ${lan && native ? 'hidden' : ''}>
           <div class="divider"><span>${t('join.or')}</span></div>
           <form class="code-form">
@@ -70,11 +71,12 @@ export function mountHome(app: HTMLElement) {
 
         <section data-pane="lobby">
           <h2 class="pane-title">${t('tab.lobby')} <span class="count"></span></h2>
-          <div class="lobby-table" role="table">
+          ${lan && native ? lanLobbyHtml() : ''}
+          <div class="lobby-table" role="table" ${lan ? 'hidden' : ''}>
             <div class="lrow lhead" role="row"><span>${t('lobby.room')}</span><span>${t('lobby.host')}</span><span>${t('lobby.players')}</span><span>${t('lobby.state')}</span></div>
             <div class="lbody"></div>
           </div>
-          <p class="hint">${t('lobby.hint')}</p>
+          <p class="hint" ${lan ? 'hidden' : ''}>${t('lobby.hint')}</p>
         </section>
       </div>
       <a class="guide-link" href="#/guide">${icon.book}<span>${t('guide.cta')}</span>${icon.right}</a>
@@ -155,7 +157,10 @@ export function mountHome(app: HTMLElement) {
   paint();
   $('.scan-btn').onclick = () => openScanner(app);
 
-  if (lan) return; // Never initialize public MQTT discovery in local mode.
+  if (lan) {
+    if (native) bindLanLobby(app);
+    return; // Never initialize public MQTT discovery in local mode.
+  }
 
   // ---------- 公开大厅：订阅所有房间的保留消息 ----------
   let rooms = new Map<string, LobbyInfo>();

@@ -15,7 +15,7 @@ export class LanClient {
   private rejected = false;
   private lastRecv = 0;
 
-  constructor(readonly room: string, public info: JoinInfo) {}
+  constructor(readonly room: string, public info: JoinInfo, private baseUrl?: string) {}
 
   start(): Promise<void> {
     this.closed = this.rejected = false;
@@ -26,7 +26,7 @@ export class LanClient {
   private setState(state: ClientState) { this.state = state; this.onState(state); }
   private connect() {
     if (this.closed || this.rejected) return;
-    const ws = new WebSocket(lanSocketUrl(this.room));
+    const ws = new WebSocket(lanSocketUrl(this.room, this.baseUrl));
     this.socket = ws;
     this.setState('connecting');
     ws.binaryType = 'arraybuffer';

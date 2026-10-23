@@ -26,6 +26,58 @@ registerHooks({
 
 const { bindLobby, teamCardHtml } = await import('../src/ui/settings-ui.ts');
 const { bindSiteTools } = await import('../src/ui/site.ts');
+const { bindLanLobby } = await import('../src/ui/lan-lobby.ts');
+
+test('局域网大厅无需开服务器即可搜索、刷新、点击房间和手动加入，退出后停止刷新', async () => {
+  const original = { window: globalThis.window, location: globalThis.location };
+  let searches = 0;
+  let pagehide;
+  let scheduled;
+  const row = { dataset: { room: '0' } };
+  const elements = {
+    '.lan-rooms': { innerHTML: '', querySelectorAll: () => [row] },
+    '.lan-refresh': {}, '.lan-join': {}, '.lan-url': { value: '' },
+    '.lan-code': { value: '' }, '.lan-error': { hidden: true },
+  };
+  globalThis.location = { hash: '' };
+  globalThis.window = {
+    __TAURI__: { core: { invoke: async (command) => {
+      assert.equal(command, 'discover_lan', '加入房间不得启动本机服务器');
+      searches++;
+      return [{ room: 'ABCDE', baseUrl: 'http://192.168.1.2:12345' }];
+    } } },
+    setTimeout: (fn) => { scheduled = fn; return 0; },
+    addEventListener: (name, fn) => { if (name === 'pagehide') pagehide = fn; },
+  };
+  try {
+    bindLanLobby({ querySelector: (selector) => elements[selector] });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(searches, 1);
+    assert.match(elements['.lan-rooms'].innerHTML, /ABCDE/);
+    row.onclick();
+    assert.equal(new URLSearchParams(location.hash.split('?')[1]).get('server'), 'http://192.168.1.2:12345');
+    elements['.lan-refresh'].onclick();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(searches, 2);
+    const submit = () => elements['.lan-join'].onsubmit({ preventDefault() {} });
+    elements['.lan-url'].value = 'http://192.168.1.3:54321/#/join/FGHJK?lan=1&pin=1234';
+    submit();
+    assert.match(location.hash, /^#\/join\/FGHJK\?/);
+    assert.equal(new URLSearchParams(location.hash.split('?')[1]).get('pin'), '1234');
+    elements['.lan-url'].value = 'http://192.168.1.4:54321';
+    elements['.lan-code'].value = 'abcde';
+    submit();
+    assert.match(location.hash, /^#\/join\/ABCDE\?/);
+    const previous = location.hash;
+    elements['.lan-url'].value = 'javascript:alert(1)';
+    submit();
+    assert.equal(elements['.lan-error'].hidden, false);
+    assert.equal(location.hash, previous);
+    pagehide();
+    await scheduled();
+    assert.equal(searches, 2);
+  } finally { Object.assign(globalThis, original); }
+});
 
 test('名单支持点击和键盘管理，滑动完成后的 click 不会把操作重新收起', () => {
   const rows = Array.from({ length: 2 }, () => {

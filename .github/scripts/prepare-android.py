@@ -36,23 +36,30 @@ if application is None:
 application.set(f"{{{android}}}networkSecurityConfig", "@xml/scankick_network_security")
 application.set(f"{{{android}}}icon", "@mipmap/ic_launcher")
 application.set(f"{{{android}}}roundIcon", "@mipmap/ic_launcher")
+application.set(f"{{{android}}}label", "@string/app_name")
+# Keep the English name and localize the launcher name for Chinese devices.
+for folder, title in {"values": "ScanKick", "values-zh": "开踢", "values-zh-rTW": "開踢", "values-zh-rHK": "開踢"}.items():
+    strings = app / "src/main/res" / folder / "strings.xml"
+    strings.parent.mkdir(parents=True, exist_ok=True)
+    resources = ET.parse(strings) if strings.exists() else ET.ElementTree(ET.Element("resources"))
+    label = resources.getroot().find("string[@name='app_name']")
+    if label is None:
+        label = ET.SubElement(resources.getroot(), "string", {"name": "app_name"})
+    label.text = title
+    resources.write(strings, encoding="utf-8", xml_declaration=True)
+
 # The controller needs landscape even when the phone has rotation locked.
 for activity_tag in application.findall("activity"):
     activity_tag.set(f"{{{android}}}screenOrientation", "fullSensor")
 tree.write(manifest, encoding="utf-8", xml_declaration=True)
 
-# The native game connects only to the loopback WebSocket. Public online services
-# keep using TLS; this does not enable cleartext traffic to arbitrary hosts.
+# LAN hosts use dynamic IP addresses, which Android domain-config cannot match
+# by subnet. Allow their HTTP/WebSocket traffic; online services still use TLS.
 network = app / "src/main/res/xml/scankick_network_security.xml"
 network.parent.mkdir(parents=True, exist_ok=True)
 network.write_text("""<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-        <domain includeSubdomains="false">tauri.localhost</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
 """, encoding="utf-8")
 

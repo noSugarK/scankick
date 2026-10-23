@@ -80,7 +80,7 @@ export async function saveQrCard(ref: RoomRef) {
   // 触屏设备优先系统分享：iOS / Android 可以直接存到相册或发给朋友
   if (matchMedia('(pointer: coarse)').matches && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: 'ScanKick' });
+      await navigator.share({ files: [file], title: t('app.name') });
       return;
     } catch (e) {
       if ((e as Error).name === 'AbortError') return;

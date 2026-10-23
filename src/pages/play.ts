@@ -45,7 +45,7 @@ const STATE_TEXT: Record<ClientState, Key> = {
 };
 
 /** client：扫码加入的手机；host：无大屏模式，本机既是主机又是球员 */
-export type PlayMode = { kind: 'client'; room: string; forceRelay: boolean; pin: string; lock: boolean; lan: boolean } | { kind: 'host' };
+export type PlayMode = { kind: 'client'; room: string; forceRelay: boolean; pin: string; lock: boolean; lan: boolean; server?: string } | { kind: 'host' };
 
 export function mountPlay(app: HTMLElement, mode: PlayMode) {
   // 只在手机比赛页拦截双指缩放：两个拇指同时按摇杆和按键时 iOS 会当成捏合。
@@ -233,8 +233,9 @@ export function mountPlay(app: HTMLElement, mode: PlayMode) {
     history = [];
     panelOpen = false;
     panel.hidden = true;
-    const Connection = mode.kind === 'client' && mode.lan ? LanClient : ClientNet;
-    const connection = new Connection(room, { token, name, team, pin, watch });
+    const info = { token, name, team, pin, watch };
+    const connection = mode.kind === 'client' && mode.lan
+      ? new LanClient(room, info, mode.server) : new ClientNet(room, info);
     net = connection;
     setWatching(watch);
     connection.forceRelay = forceRelay;

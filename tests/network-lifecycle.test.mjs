@@ -24,7 +24,41 @@ registerHooks({
 const { ClientNet } = await import('../src/net/client.ts');
 const { HostNet } = await import('../src/net/host.ts');
 const { LanClient } = await import('../src/net/lan-client.ts');
+const { lanJoinHash, lanSocketUrl } = await import('../src/net/lan-session.ts');
 const info = { token: 'player', name: 'P', team: 'auto' };
+
+test('应用局域网大厅传递远端主机地址，重连仍使用同一主机', async () => {
+  const original = { window: globalThis.window, location: globalThis.location, WebSocket: globalThis.WebSocket };
+  const urls = [];
+  globalThis.window = { setTimeout: () => 0 };
+  globalThis.location = { origin: 'http://tauri.localhost' };
+  globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    constructor(url) { urls.push(url); }
+    send() {}
+    close() { this.onclose?.(); }
+  };
+  const client = new LanClient('ABCDE', info, 'http://192.168.1.2:12345');
+  try {
+    const hash = lanJoinHash({ room: 'ABCDE', baseUrl: 'http://192.168.1.2:12345/' }, '1234');
+    const query = new URLSearchParams(hash.split('?')[1]);
+    assert.equal(query.get('server'), 'http://192.168.1.2:12345');
+    assert.equal(query.get('pin'), '1234');
+    await client.start();
+    client.state = 'lost';
+    assert.equal(client.retryDirect(), true);
+    assert.deepEqual(urls, Array(2).fill('ws://192.168.1.2:12345/ws?room=ABCDE'));
+    assert.equal(lanSocketUrl('ABCDE'), 'ws://tauri.localhost/ws?room=ABCDE');
+    for (const baseUrl of ['javascript:alert(1)', 'https://example.com:1234', 'http://user:pass@192.168.1.2:1234']) {
+      assert.throws(() => lanJoinHash({ room: 'ABCDE', baseUrl }));
+    }
+    assert.throws(() => lanJoinHash({ room: '../bad', baseUrl: 'http://192.168.1.2:1234' }));
+  } finally {
+    client.close();
+    Object.assign(globalThis, original);
+  }
+});
 
 test('关闭中的在线连接不能在信令连接完成后重新订阅或启动定时器', async () => {
   const originalWindow = globalThis.window;

@@ -6,11 +6,12 @@ import { mountPlay } from './pages/play';
 import { mountScreen } from './pages/screen';
 import { applyTheme } from './ui/site';
 import { esc, normalizeCode, randomCode, roomOpts, store } from './ui/util';
-import { isLanPage, isNativeApp, startLan, stopLan } from './net/lan-session';
+import { isLanPage, isNativeApp, lanBaseUrl, startLan, stopLan } from './net/lan-session';
 
 const app = document.getElementById('app')!;
 document.documentElement.lang = lang;
 document.title = lang === 'en' ? 'ScanKick' : `${t('app.name')} · ScanKick`;
+document.querySelector('meta[name="apple-mobile-web-app-title"]')?.setAttribute('content', t('app.name'));
 applyTheme();
 
 async function route() {
@@ -39,7 +40,12 @@ async function route() {
   else if (page === 'guide') mountGuide(app);
   else if (page === 'join' && arg) {
     const q = new URLSearchParams(query);
-    mountPlay(app, { kind: 'client', room: normalizeCode(arg), forceRelay: q.has('relay'), pin: q.get('pin') ?? '', lock: q.has('lock'), lan: isLanPage() });
+    let server: string | undefined;
+    if (isNativeApp() && q.has('lan') && q.has('server')) {
+      try { server = lanBaseUrl(q.get('server')!); }
+      catch { location.hash = '#/'; return; }
+    }
+    mountPlay(app, { kind: 'client', room: normalizeCode(arg), forceRelay: q.has('relay'), pin: q.get('pin') ?? '', lock: q.has('lock'), lan: isLanPage() || !!server, server });
   } else mountHome(app);
 }
 
